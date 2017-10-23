@@ -9,6 +9,7 @@ import boto3
 from botocore.errorfactory import ClientError
 import json
 import yaml
+from jinja2 import Environment
 
 # Configure LOGGER object
 LOGGER = logging.getLogger()
@@ -37,34 +38,31 @@ def get_conf_template(bucket, key):
             exit(1)
 
 
-def generate_zone_configuration(data, template):
+def generate_zone_configuration(zones):
     """
     Generates Icinga2 zone configuration file from the template
     Zone object params:
     - endpoints: Array of endpoint names located in this zone
     - parent: The name of the parent zone
-    - global: Whether configuration files for this zone should be synced to
-    all endpoints
+    - global: flag to sync confgiuration files across all nodes within zone
     """
-    config = []
-    if data['endpoints'] is not None:
-        config.append("\tendpoints = [ \"{0}\" ]".format(data['endpoints']))
-
-    if data['parent'] is not None:
-        config.append("\tparent = \"{0}\"".format(data['parent']))
-
-    if template['global'] is not None:
-        config.append("\tparent = \"true\"")
-
-    content = Template("object Zone $hostname {\n" +
-                       "$config\n" +
-                       "}")
-    result = content.safe_substitute(hostname=data['PrivateDnsName'],
-                                     config='\n'.join(config))
-    return json.dump(result)
+    TEMPLATE = """
+    {% for zone in zones %}
+    object Zone {{ zone.name }} {
+        endpoints = [ {{ zone.name }} ]
+        {% if zone.parent is not None %}
+        parent = {{ zone.parent }}
+        {% endif %}
+        {% if zone.global %}
+        global = "true"
+        {% endif %}
+    }\n
+    {% endfor %}
+    """
+    return Environment().from_string(TEMPLATE).render(zones=zones)
 
 
-def generate_endpoint_configuration(data, template):
+def generate_endpoint_configuration(endpoints):
     """
     Generates Icinga2 endpoing configuration file from the template
     Endpoint object params:
@@ -72,22 +70,22 @@ def generate_endpoint_configuration(data, template):
     - port: The service name/port of the remote Icinga 2 instance.
     - log_duration: Duration for keeping replay logs on connection loss.
     """
-    config = []
-    if data is not None:
-        config.append("\thost = \"{0}\"".format(data))
-
-    if template['port'] is not None:
-        config.append("\tport = \"{0}\"".format(template['port']))
-
-    if template['log_duration'] is not None:
-        config.append("\tlog_duration = \"{0}\"".format(template['log_duration']))
-
-    content = Template("object Endpoint $hostname {\n" +
-                       "$config\n" +
-                       "}")
-    result = content.safe_substitute(hostname=data['PrivateDnsName'],
-                                     config='\n'.join(config))
-    return json.dump(result)
+    TEMPLATE = """
+    {% for endpoint in endpoints %}
+    object Endpoint {{ endpoint.name }} {
+        {% if endpoint.host is not None %}
+        host = {{ endpoint.host }}
+        {% endif %}
+        {% if endpoint.port is not None %}
+        port = {{ endpoint.port }}
+        {% endif %}
+        {% if endpoint.log_duration is not None %}
+        log_duration = {{ endpoint.log_duration }}
+        {% endif %}
+    }\n
+    {% endfor %}
+    """
+    return Environment().from_string(TEMPLATE).render(endpoints=endpoints)
 
 
 def generate_host_configuration(data, template):
@@ -416,6 +414,32 @@ def update_conf_object(url,
         print(results)
 
 
+def get_client_zone_conf(data):
+    """
+        Generate client /etc/icinga2/zone.conf content
+        File consists of:
+         - Client endpoint object
+         - Master endpoint object
+         - Client zone object
+         - Master zone object
+    """
+    conf = []
+    # Generate endpoints objects
+    endpoints = []
+    endpoints.append(dict(name=data['client_dns'],
+                          host=data['client_ip']))
+    endpoints.append(dict(name=data['master_dns'],
+                          host=data['master_ip']))
+    conf.append(generate_endpoint_configuration(endpoints))
+    # Generate zone objects
+    zones = []
+    zones.append(dict(name=data['cliet_dns'],
+                      parent=data['master_dns']))
+    zones.append(dict(name=data['master_dns']))
+    conf.append(generate_zone_configuration(zones))
+    return ''.join(conf)
+
+
 def handler(event, context):
     """
         AWS Lambda main method
@@ -424,49 +448,41 @@ def handler(event, context):
     template_bucket = environ['TEMPLATES_BUCKET']
     api_user = environ['API_USER']
     api_pass = environ['API_PASS']
-    master = environ['MASTER_HOST']
+    api_port = environ['API_PORT']
+    api_endpoint = environ['API_ENDPOINT']
 
-    key = {}
-    key['host'] = "host/{0}".format(metadata['host_template'])
-    key['endpoint'] = "endpoint/{0}".format(metadata['endpoint_template'])
-    key['zone'] = "zone/{0}".format(metadata['endpoint_template'])
-    key['service'] = "service/{0}".format(metadata['service_template'])
+    templates = {}
+    templates['host'] = "host/{0}".format(metadata['host_template'])
+    templates['endpoint'] = "endpoint/{0}".format(metadata['endpoint_template'])
+    templates['zone'] = "zone/{0}".format(metadata['endpoint_template'])
+    templates['service'] = "service/{0}".format(metadata['service_template'])
 
     # Retrieve host configuration template from template store (S3 bucket)
     host_conf_tpl = get_conf_template(template_bucket,
-                                      key['host'])
+                                      templates['host'])
     # Retrieve endpoint configuration template from template store (S3 bucket)
     endpnt_conf_tpl = get_conf_template(template_bucket,
-                                        key['endpoint'])
+                                        templates['endpoint'])
     # Retrieve zone configuration template from template store (S3 bucket)
     zone_conf_tpl = get_conf_template(template_bucket,
-                                      key['zone'])
+                                      templates['zone'])
     # Retrieve service configuration template from template store (S3 bucket)
     service_conf_tpl = get_conf_template(template_bucket,
-                                         key['service'])
+                                         templates['service'])
     # Generate hody configuration content
-    generate_host_configuration(metadata, yaml.load(host_conf_tpl))
+    #generate_host_configuration(metadata, yaml.load(host_conf_tpl))
     # Generate zone configuration content
-    generate_zone_configuration(metadata, yaml.load(zone_conf_tpl))
+    #generate_zone_configuration(metadata, yaml.load(zone_conf_tpl))
     # Generate service configuration content
-    generate_service_configuration(metadata, yaml.load(service_conf_tpl))
+    #generate_service_configuration(metadata, yaml.load(service_conf_tpl))
+    # GENERATE CLIENT ZONE CONFIGURATION
 
     # Initialize API call data payload
     data = {}
-    data['files'] = {}
+    data['files'] = get_client_zone_conf(metadata)
+    # ADD API LOGIC (conf package management)
+    create_conf_object()
 
-    # Deploy client configuration packages
-    content = []
-    tpl = Template("$content\n")
-    endpoints = []
-    endpoints.append(metadata['PrivateIpAddress'])
-    endpoints.append(master)
-
-    for enpt in endpoints:
-        # Generate endpoint configuration content (client side)
-        conf = generate_endpoint_configuration(enpt, yaml.load(endpnt_conf_tpl))
-        # Generate final endoint configuration file content
-        data['/etc/icinga2/zones.conf'] = tpl.safe_substitute(content=conf)
 
 
 
