@@ -48,7 +48,7 @@ def generate_zone_configuration(zones):
     """
     TEMPLATE = """
     {% for zone in zones %}
-    object Zone {{ zone.name }} {
+    object Zone "{{ zone.name }}" {
         endpoints = [ {{ zone.name }} ]
         {% if zone.parent is not None %}
         parent = {{ zone.parent }}
@@ -72,7 +72,7 @@ def generate_endpoint_configuration(endpoints):
     """
     TEMPLATE = """
     {% for endpoint in endpoints %}
-    object Endpoint {{ endpoint.name }} {
+    object Endpoint "{{ endpoint.name }}" {
         {% if endpoint.host is not None %}
         host = {{ endpoint.host }}
         {% endif %}
@@ -129,94 +129,92 @@ def generate_host_configuration(data, template):
     - icon_image_alt Icon image description for the host.
     Used by external interface only.
     """
-    config = []
-    if template['check_command'] is not None:
-        config.append("\tcheck_command = \"{0}\"".format(template['check_command']))
-    else:
-        config.append('\tcheck_command = "hostalive"')
+    TEMPLATE = """
+    object Host "{{ data.hostname }}" {
+        address = "{{ data.address }}"
+        {% if template.check_command is not None %}
+        check_command = "{{ template.check_command }}"
+        {% else %}
+        check_command = "hostalive"
+        {% endif %}
+        {% if template.display_name is not None %}
+        display_name = "{{ template.display_name }}"
+        {% else %}
+        display_name = "{{ data.fqnd }}"
+        {% endif %}
+        {% if template.groups is not None %}
+        groups = [{% for group in template.groups %}"{{group}}",{% endfor %}]
+        {% endif %}
+        {% if template.vars is not None %}
+        {% for key, value in template.vars.iteritems() %}
+        vars.{{ key }} = "{{ value }}"
+        {% endfor %}
+        {% endif %}
+        {% if template.max_check_attempts is not None %}
+        max_check_attempts = "{{ template.max_check_attempts }}"
+        {% endif %}
+        {% if template.check_period is not None %}
+        check_period = "{{ template.check_period }}"
+        {% endif %}
+        {% if template.check_timeout is not None %}
+        check_timeout = "{{ template.check_timeout }}"
+        {% endif %}
+        {% if template.check_interval is not None %}
+        check_interval = "{{ template.check_interval }}"
+        {% endif %}
+        {% if template.retry_interval is not None %}
+        retry_interval = "{{ template.retry_interval }}"
+        {% endif %}
+        {% if template.enable_notifications is not None %}
+        enable_notifications = "{{ template.enable_notifications }}"
+        {% endif %}
+        {% if template.enable_active_checks is not None %}
+        enable_active_checks = "{{ template.enable_active_checks }}"
+        {% endif %}
+        {% if template.enable_passive_checks is not None %}
+        enable_passive_checks = "{{ template.enable_passive_checks }}"
+        {% endif %}
+        {% if template.enable_event_handler is not None %}
+        enable_event_handler = "{{ template.enable_event_handler }}"
+        {% endif %}
+        {% if template.enable_flapping is not None %}
+        enable_flapping = "{{ template.enable_flapping }}"
+        {% endif %}
+        {% if template.enable_perfdata is not None %}
+        enable_perfdata = "{{ template.enable_perfdata }}"
+        {% endif %}
+        {% if template.event_command is not None %}
+        event_command = "{{ template.event_command }}"
+        {% endif %}
+        {% if template.volatile is not None %}
+        volatile = "{{ template.volatile }}"
+        {% endif %}
+        {% if template.zone is not None %}
+        zone = "{{ template.zone }}"
+        {% endif %}
+        {% if template.command_endpoint is not None %}
+        command_endpoint = "{{ template.command_endpoint }}"
+        {% endif %}
+        {% if template.notes is not None %}
+        notes = "{{ template.notes }}"
+        {% endif %}
+        {% if template.notes_url is not None %}
+        notes_url = "{{ template.notes_url }}"
+        {% endif %}
+        {% if template.action_url is not None %}
+        action_url = "{{ template.action_url }}"
+        {% endif %}
+        {% if template.icon_image is not None %}
+        icon_image = "{{ template.icon_image }}"
+        {% endif %}
+        {% if template.icon_image_alt is not None %}
+        icon_image_alt = "{{ template.icon_image_alt }}"
+        {% endif %}
+    }
+    """
 
-    config.append("\taddress = \"{0}\"".format(data['PrivateIpAddress']))
-    # Configure display name
-    if template['display_name'] is not None:
-        config.append("\tdisplay_name = \"{0}\"".format(template['display_name']))
-    else:
-        config.append("\tdisplay_name = \"{0}\"".format(data['InstanceName']))
-
-    if template['groups'] is not None:
-        config.append("\tgroups = \"{0}\"".format(template['groups']))
-
-    if template['vars'] is not None:
-        config.append("\tvars = \"{0}\"".format(template['vars']))
-
-    if template['max_check_attempts'] is not None:
-        config.append("\tmax_check_attempts = \"{0}\"".format(template['max_check_attempts']))
-
-    if template['check_period'] is not None:
-        config.append("\tcheck_period = \"{0}\"".format(template['check_period']))
-
-    if template['check_timeout'] is not None:
-        config.append("\tcheck_timeout = \"{0}\"".format(template['check_timeout']))
-
-    if template['check_interval'] is not None:
-        config.append("\tcheck_interval = \"{0}\"".format(template['check_interval']))
-
-    if template['retry_interval'] is not None:
-        config.append("\tretry_interval = \"{0}\"".format(template['retry_interval']))
-
-    if template['enable_notifications'] is not None:
-        config.append("\tenable_notifications = \"{0}\"".format(template['enable_notifications']))
-
-    if template['enable_active_checks'] is not None:
-        config.append("\tenable_active_checks = \"{0}\"".format(template['enable_active_checks']))
-
-    if template['enable_active_checks'] is not None:
-        config.append("\tenable_active_checks = \"{0}\"".format(template['enable_active_checks']))
-
-    if template['enable_passive_checks'] is not None:
-        config.append("\tenable_passive_checks = \"{0}\"".format(template['enable_passive_checks']))
-
-    if template['enable_event_handler'] is not None:
-        config.append(["\tenable_event_handler = \"{0}\""].format(template['enable_event_handler']))
-
-    if template['enable_flapping'] is not None:
-        config.append("\tenable_flapping = \"{0}\"".format(template['enable_flapping']))
-
-    if template['enable_perfdata'] is not None:
-        config.append("\tenable_perfdata = \"{0}\"".format(template['enable_perfdata']))
-
-    if template['event_command'] is not None:
-        config.appned("\tevent_command = \"{0}\"".format(template['event_command']))
-
-    if template['volatile'] is not None:
-        config.append("\tvolatile = \"{0}\"".format(template['volatile']))
-
-    if template['zone'] is not None:
-        config.append("\tzone = \"{0}\"".format(template['zone']))
-
-    if template['command_endpoint'] is not None:
-        config.append("\tcommand_endpoint = \"{0}\"".format(template['command_endpoint']))
-
-    if template['notes'] is not None:
-        config.append("\tnotes = \"{0}\"".format(template['notes']))
-
-    if template['notes_url'] is not None:
-        config.append("\tnotes_url = \"{0}\"".format(template['notes_url']))
-
-    if template['action_url'] is not None:
-        config.append("\taction_url = \"{0}\"".format(template['action_url']))
-
-    if template['icon_image'] is not None:
-        config.append("\ticon_image = \"{0}\"".format(template['icon_image']))
-
-    if template['icon_image_alt'] is not None:
-        config.append("\ticon_image_alt = \"{0}\"".format(template['icon_image_alt']))
-
-    content = Template("object Host $hostname {\n" +
-                       "$config\n" +
-                       "}")
-    result = content.safe_substitute(hostname=data['PrivateDnsName'],
-                                     config='\n'.join(config))
-    return json.dump(result)
+    return Environment().from_string(TEMPLATE).render(data=data,
+                                                      template=template)
 
 
 def generate_service_configuration(data, template=None):
@@ -414,32 +412,6 @@ def update_conf_object(url,
         print(results)
 
 
-def get_client_zone_conf(data):
-    """
-        Generate client /etc/icinga2/zone.conf content
-        File consists of:
-         - Client endpoint object
-         - Master endpoint object
-         - Client zone object
-         - Master zone object
-    """
-    conf = []
-    # Generate endpoints objects
-    endpoints = []
-    endpoints.append(dict(name=data['client_dns'],
-                          host=data['client_ip']))
-    endpoints.append(dict(name=data['master_dns'],
-                          host=data['master_ip']))
-    conf.append(generate_endpoint_configuration(endpoints))
-    # Generate zone objects
-    zones = []
-    zones.append(dict(name=data['cliet_dns'],
-                      parent=data['master_dns']))
-    zones.append(dict(name=data['master_dns']))
-    conf.append(generate_zone_configuration(zones))
-    return ''.join(conf)
-
-
 def handler(event, context):
     """
         AWS Lambda main method
@@ -476,13 +448,3 @@ def handler(event, context):
     # Generate service configuration content
     #generate_service_configuration(metadata, yaml.load(service_conf_tpl))
     # GENERATE CLIENT ZONE CONFIGURATION
-
-    # Initialize API call data payload
-    data = {}
-    data['files'] = get_client_zone_conf(metadata)
-    # ADD API LOGIC (conf package management)
-    create_conf_object()
-
-
-
-
