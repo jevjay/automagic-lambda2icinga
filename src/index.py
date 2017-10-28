@@ -14,6 +14,8 @@
 from os import environ
 import sys
 import logging
+from datetime import datetime, timedelta
+import calendar
 import json
 import boto3
 from botocore.errorfactory import ClientError
@@ -316,10 +318,10 @@ def generate_service_configuration(data, template):
                                                   template=template)
 
 
-def get_conf_packages(url,
-                      user,
-                      password,
-                      ssl_verify=False):
+def get_api_request(url,
+                    user,
+                    password,
+                    ssl_verify=False):
     '''
       Verify Icinga 2 object configuration existatnce
     '''
@@ -352,10 +354,11 @@ def get_conf_packages(url,
         return False
 
 
-def create_conf_package(url,
-                        user,
-                        password,
-                        ssl_verify=False):
+def post_api_request(url,
+                     user,
+                     password,
+                     data=None,
+                     ssl_verify=False):
     '''
       Cretate (PUT) configuration files to Icinga2 master
     '''
@@ -368,43 +371,13 @@ def create_conf_package(url,
     else:
         headers = {'Accept': 'application/json'}
         try:
-            response = requests.post(url,
-                                     auth=(user, password),
-                                     headers=headers,
-                                     verify=ssl_verify)
-        except requests.exceptions.Timeout:
-            LOGGER.error("Request to %s has timed out.", url)
-        # Maybe set up for a retry, or continue in a retry loop
-        except requests.exceptions.TooManyRedirects:
-            LOGGER.error("Request to %s results in too many redirects.", url)
-        # Tell the user their URL was bad and try a different one
-        except requests.exceptions.RequestException as err:
-            # catastrophic error. bail.
-            LOGGER.error(err)
-            sys.exit(1)
-        response_data = response.json()
-        results = response_data['results']
-        print(results)
-
-
-def create_conf_stage(url,
-                      user,
-                      password,
-                      data,
-                      ssl_verify=False):
-    '''
-      Update (POST) configuration files for Icinga2 master
-    '''
-    if url is None:
-        LOGGER.error("FAIL: Icinga2 URL is missing")
-    elif user is None:
-        LOGGER.error("FAIL: Icinga2 user is missing")
-    elif password is None:
-        LOGGER.error("FAIL: Icinga2 user is missing")
-    else:
-        headers = {'Accept': 'application/json'}
-        try:
-            response = requests.post(url,
+            if data is not None:
+                response = requests.post(url,
+                                         auth=(user, password),
+                                         headers=headers,
+                                         verify=ssl_verify)
+            else:
+                response = requests.post(url,
                                      auth=(user, password),
                                      headers=headers,
                                      data=json.dumps(data),
@@ -414,7 +387,7 @@ def create_conf_stage(url,
         # Maybe set up for a retry, or continue in a retry loop
         except requests.exceptions.TooManyRedirects:
             LOGGER.error("Request to %s results in too many redirects.", url)
-            # Tell the user their URL was bad and try a different one
+        # Tell the user their URL was bad and try a different one
         except requests.exceptions.RequestException as err:
             # catastrophic error. bail.
             LOGGER.error(err)
@@ -460,7 +433,7 @@ def handler(event, context):
     # GENERATE CLIENT ZONE CONFIGURATION
     # Step 1: Check if configuration package exist
     base_url = "https://{0}:{1}/v1/config/packages".format(api_endpoint, api_port)
-    packages = get_conf_packages(base_url, api_user, api_pass)
+    packages = get_api_request(base_url, api_user, api_pass)
     # check if package for the host exist
     stages = None
     for package in packages:
@@ -471,7 +444,7 @@ def handler(event, context):
     # if stages exist, confugration package was created
     # otherwise create new configuration package
     if stages is not None:
-        create_conf_package(uri, api_user, api_pass)
+        post_api_request(uri, api_user, api_pass)
 
     # Generate host configuration content
     host_conf = generate_host_configuration(metadata, yaml.load(host_conf_tpl))
@@ -480,4 +453,21 @@ def handler(event, context):
         data = {}
         conf_path = 'conf.d/{0}.conf'.format(metadata['hostname'])
         data['files'] = {conf_path: host_conf}
-        create_conf_stage(uri, api_user, api_pass, data)
+        post_api_request(uri, api_user, api_pass, data)
+        # Downtime just created host check
+        downtime_uri = "https://{0}:{1}/v1/actions/schedule-downtime?type=Host&filter=host.name=={3}".format(api_endpoint,
+                                                                                                             api_port,
+                                                                                                             metadata['hostname'])
+        downtime_data = {}
+        now = datetime.utcnow()
+        downtime_time['start_time'] = calendar.timegm(now.utctimetuple())
+        end_timestamp = datetime.utcnow() + datetime.timedelta(minutes=10)
+        downtime_time['end_time'] = calendar.timegm(end_timestamp.timetuple())
+
+        post_api_request(downtime_uri,
+                         api_user,
+                         api_pass,
+                         downtime_data)
+
+    # Generate service configurations
+    
