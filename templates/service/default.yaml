@@ -37,4 +37,11 @@ services:
     vars:
       config: true
     enable_notification: true
-
+  memory:
+    check_command: mem
+    display_name: memory_usage
+    var:
+      mem_warning: 10
+      mem_critical: 5
+      mem_used: true
+    enable_notification: true
