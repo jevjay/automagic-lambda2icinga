@@ -28,6 +28,53 @@ LOGGER = logging.getLogger()
 LOGGER.setLevel(logging.INFO)
 
 
+def get_instance_data(instance):
+    """
+        Get EC2 instances accross region
+    """
+    # Get EC2 resource
+    ec2 = boto3.client('ec2', region_name=os.environ['AWS_DEFAULT_REGION'])
+    # Get EC2 resource
+    ec2 = boto3.client('ec2', region_name=os.environ['AWS_DEFAULT_REGION'])
+    ec2_filters = [{
+        "Name": "tag:icinga2",
+        "Values": ["enabled", "True", "true"]
+        },
+        {"Name": "instance-id", "Values": [instance]}]
+    response = ec2.describe_instances(Filters=ec2_filters)
+    data = response['Reservations'][0]['Ínstances'][0]
+    # Flag to configure instance with public ip
+    public = False
+    metadata = {}
+    # Set default host/service configuration templates
+    metadata['l2i_host_template'] = 'default'
+    metadata['l2i_service_template'] = 'default'
+    for tag in data['Tags']:
+        # Get hostname
+        if tag['Key'] == 'Name':
+            metadata['hostname'] = tag['Value']
+        # Get host configuration template
+        if tag['Key'] == 'l2i_host_template':
+            metadata['l2i_host_template'] = tag['Value']
+        # Get service configuration template
+        if tag['Key'] == 'l2i_service_template':
+            metadata['l2i_service_template'] = tag['Value']
+        # Check if instance marked to be configured with pub ip
+        if tag['Key'] = 'l2i_public_enabled':
+            public = True
+
+    # Assign private ip
+    metadata['address'] = data['PrivateIpAddress']
+    # If public flag set to true, enable public ip
+    if public:
+        try:
+            metadata['address'] = data['PublicIpAddress']
+        except KeyError:
+            # Add error logging and kepp private ip
+            pass
+    return metadata
+
+
 def get_conf_template(bucket, key):
     """
         Read S3 object and return its stored data
@@ -47,7 +94,7 @@ def get_conf_template(bucket, key):
             return obj['Body'].read()
         else:
             LOGGER.error("Unhandled error: \n{0}").format(err)
-            exit(1)
+            sys.exit(1)
 
 
 def generate_zone_configuration(template):
@@ -223,6 +270,7 @@ def generate_host_configuration(data, template):
         icon_image_alt = "{{ template.icon_image_alt }}"
         {% endif %}
     }
+
     """
     return Environment().from_string(conf).render(data=data,
                                                   template=template)
@@ -313,6 +361,7 @@ def generate_service_configuration(data, template):
         icon_image_alt = "{{ template.icon_image_alt }}"
         {% endif %}
     }
+
     """
     return Environment().from_string(conf).render(data=data,
                                                   template=template)
@@ -401,36 +450,25 @@ def handler(event, context):
     """
         AWS Lambda main method
     """
-    metadata = event['Records'][0]
     template_bucket = environ['TEMPLATES_BUCKET']
     api_user = environ['API_USER']
     api_pass = environ['API_PASS']
     api_port = environ['API_PORT']
     api_endpoint = environ['API_ENDPOINT']
 
+    # Get instance metadata
+    metadata = get_instance_data(event['detail']['instance-id'])
+
     templates = {}
-    templates['host'] = "host/{0}".format(metadata['host_template'])
-    templates['endpoint'] = "endpoint/{0}".format(metadata['endpoint_template'])
-    templates['zone'] = "zone/{0}".format(metadata['endpoint_template'])
-    templates['service'] = "service/{0}".format(metadata['service_template'])
+    templates['host'] = "host/{0}".format(metadata['l2i_host_template'])
+    templates['service'] = "service/{0}".format(metadata['l2i_service_template'])
 
     # Retrieve host configuration template from template store (S3 bucket)
     host_conf_tpl = get_conf_template(template_bucket,
                                       templates['host'])
-    # Retrieve endpoint configuration template from template store (S3 bucket)
-    endpnt_conf_tpl = get_conf_template(template_bucket,
-                                        templates['endpoint'])
-    # Retrieve zone configuration template from template store (S3 bucket)
-    zone_conf_tpl = get_conf_template(template_bucket,
-                                      templates['zone'])
     # Retrieve service configuration template from template store (S3 bucket)
     service_conf_tpl = get_conf_template(template_bucket,
                                          templates['service'])
-    # Generate zone configuration content
-    #generate_zone_configuration(metadata, yaml.load(zone_conf_tpl))
-    # Generate service configuration content
-    #generate_service_configuration(metadata, yaml.load(service_conf_tpl))
-    # GENERATE CLIENT ZONE CONFIGURATION
     # Step 1: Check if configuration package exist
     base_url = "https://{0}:{1}/v1/config/packages".format(api_endpoint, api_port)
     packages = get_api_request(base_url, api_user, api_pass)
@@ -470,4 +508,13 @@ def handler(event, context):
                          downtime_data)
 
     # Generate service configurations
-    
+    services = yaml.load(service_conf_tpl)
+    service_conf = None
+    for service in services:
+        service_conf += generate_service_configuration(metadata, service)
+    # Create host service configuration file
+    if service_conf is not None:
+        data = {}
+        conf_path = 'conf.d/{0}_services.conf'.format(metadata['hostname'])
+        data['files'] = {conf_path: service_conf}
+        post_api_request(uri, api_user, api_pass, data)
