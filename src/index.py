@@ -33,16 +33,17 @@ def get_instance_data(instance):
         Get EC2 instances accross region
     """
     # Get EC2 resource
-    ec2 = boto3.client('ec2', region_name=os.environ['AWS_DEFAULT_REGION'])
+    ec2 = boto3.client('ec2', region_name=environ['AWS_DEFAULT_REGION'])
     # Get EC2 resource
-    ec2 = boto3.client('ec2', region_name=os.environ['AWS_DEFAULT_REGION'])
+    ec2 = boto3.client('ec2', region_name=environ['AWS_DEFAULT_REGION'])
     ec2_filters = [{
         "Name": "tag:icinga2",
         "Values": ["enabled", "True", "true"]
         },
         {"Name": "instance-id", "Values": [instance]}]
     response = ec2.describe_instances(Filters=ec2_filters)
-    data = response['Reservations'][0]['Ínstances'][0]
+    LOGGER.info(response)
+    data = response['Reservations'][0]['Instances'][0]
     # Flag to configure instance with public ip
     public = False
     metadata = {}
@@ -60,7 +61,7 @@ def get_instance_data(instance):
         if tag['Key'] == 'l2i_service_template':
             metadata['l2i_service_template'] = tag['Value']
         # Check if instance marked to be configured with pub ip
-        if tag['Key'] = 'l2i_public_enabled':
+        if tag['Key'] == 'l2i_public_enabled':
             public = True
 
     # Assign private ip
@@ -70,8 +71,10 @@ def get_instance_data(instance):
         try:
             metadata['address'] = data['PublicIpAddress']
         except KeyError:
-            # Add error logging and kepp private ip
+            # Add warrning logging and kepp private ip
+            LOGGER.warning('Not able to get public IP value for {0}'.format(metadata['hostname']))
             pass
+    LOGGER.info(metadata)
     return metadata
 
 
@@ -450,11 +453,32 @@ def handler(event, context):
     """
         AWS Lambda main method
     """
-    template_bucket = environ['TEMPLATES_BUCKET']
-    api_user = environ['API_USER']
-    api_pass = environ['API_PASS']
-    api_port = environ['API_PORT']
-    api_endpoint = environ['API_ENDPOINT']
+    try:
+        template_bucket = environ['TEMPLATES_BUCKET']
+    except KeyError:
+        LOGGER.error('Please set the enviroment variable "TEMPLATES_BUCKET"')
+
+    try:
+        api_user = environ['API_USER']
+    except KeyError:
+        LOGGER.error('Please set the enviroment variable "API_USER"')
+
+    try:
+        api_pass = environ['API_PASS']
+    except KeyError:
+        LOGGER.error('Please set the enviroment variable "API_PASS"')
+
+    try:
+        api_port = environ['API_PORT']
+    except KeyError:
+        LOGGER.error('Please set the enviroment variable "API_PORT"')
+
+    try:
+        api_endpoint = environ['API_ENDPOINT']
+    except KeyError:
+        LOGGER.error('Please set the enviroment variable "API_ENDPOINT"')
+
+    LOGGER.info(event)
 
     # Get instance metadata
     metadata = get_instance_data(event['detail']['instance-id'])
