@@ -34,8 +34,6 @@ def get_instance_data(instance):
     """
     # Get EC2 resource
     ec2 = boto3.client('ec2', region_name=environ['AWS_DEFAULT_REGION'])
-    # Get EC2 resource
-    ec2 = boto3.client('ec2', region_name=environ['AWS_DEFAULT_REGION'])
     ec2_filters = [{
         "Name": "tag:icinga2",
         "Values": ["enabled", "True", "true"]
@@ -100,56 +98,6 @@ def get_conf_template(bucket, key):
             sys.exit(1)
 
 
-def generate_zone_configuration(template):
-    """
-    Generates Icinga2 zone configuration file from the template
-    Zone object params:
-    - endpoints: Array of endpoint names located in this zone
-    - parent: The name of the parent zone
-    - global: flag to sync confgiuration files across all nodes within zone
-    """
-    conf = """
-    {% for zone in template %}
-    object Zone "{{ zone.name }}" {
-        endpoints = [ "{{ zone.name }}" ]
-        {% if zone.parent is not None %}
-        parent = "{{ zone.parent }}"
-        {% endif %}
-        {% if zone.global %}
-        global = "true"
-        {% endif %}
-    }\n
-    {% endfor %}
-    """
-    return Environment().from_string(conf).render(template=template)
-
-
-def generate_endpoint_configuration(template):
-    """
-    Generates Icinga2 endpoing configuration file from the template
-    Endpoint object params:
-    - host: The hostname/IP address of the remote Icinga 2 instance.
-    - port: The service name/port of the remote Icinga 2 instance.
-    - log_duration: Duration for keeping replay logs on connection loss.
-    """
-    conf = """
-    {% for endpoint in template %}
-    object Endpoint "{{ endpoint.name }}" {
-        {% if endpoint.host is not None %}
-        host = "{{ endpoint.host }}"
-        {% endif %}
-        {% if endpoint.port is not None %}
-        port = "{{ endpoint.port }}"
-        {% endif %}
-        {% if endpoint.log_duration is not None %}
-        log_duration = {{ endpoint.log_duration }}
-        {% endif %}
-    }\n
-    {% endfor %}
-    """
-    return Environment().from_string(conf).render(template=template)
-
-
 def generate_host_configuration(data, template):
     """
     Genearates Icinga2 host configuration file out from the template
@@ -194,89 +142,89 @@ def generate_host_configuration(data, template):
     conf = """
     object Host "{{ data.hostname }}" {
         address = "{{ data.address }}"
-        {% if template.check_command is not None %}
+        {% if template.check_command is defined %}
         check_command = "{{ template.check_command }}"
         {% else %}
         check_command = "hostalive"
         {% endif %}
-        {% if template.display_name is not None %}
+        {% if template.display_name is defined %}
         display_name = "{{ template.display_name }}"
         {% else %}
+        {% if data.fqdn is defined %}
         display_name = "{{ data.fqnd }}"
+        {% else %}
+        display_name = "{{ data.hostname }}"
         {% endif %}
-        {% if template.groups is not None %}
+        {% endif %}
+        {% if template.groups is defined %}
         groups = [{% for group in template.groups %}"{{ group }}",{% endfor %}]
         {% endif %}
-        {% if template.vars is not None %}
-        {% for key, value in template.vars.iteritems() %}
-        vars.{{ key }} = "{{ value }}"
-        {% endfor %}
-        {% endif %}
-        {% if template.max_check_attempts is not None %}
+        {% if template.max_check_attempts is defined %}
         max_check_attempts = "{{ template.max_check_attempts }}"
         {% endif %}
-        {% if template.check_period is not None %}
+        {% if template.check_period is defined %}
         check_period = "{{ template.check_period }}"
         {% endif %}
-        {% if template.check_timeout is not None %}
+        {% if template.check_timeout is defined %}
         check_timeout = "{{ template.check_timeout }}"
         {% endif %}
-        {% if template.check_interval is not None %}
+        {% if template.check_interval is defined %}
         check_interval = "{{ template.check_interval }}"
         {% endif %}
-        {% if template.retry_interval is not None %}
+        {% if template.retry_interval is defined %}
         retry_interval = "{{ template.retry_interval }}"
         {% endif %}
-        {% if template.enable_notifications is not None %}
-        enable_notifications = "{{ template.enable_notifications }}"
+        {% if template.enable_notifications is defined %}
+        enable_notifications = {{ template.enable_notifications|lower }}
         {% endif %}
-        {% if template.enable_active_checks is not None %}
-        enable_active_checks = "{{ template.enable_active_checks }}"
+        {% if template.enable_active_checks is defined %}
+        enable_active_checks = {{ template.enable_active_checks|lower }}
         {% endif %}
-        {% if template.enable_passive_checks is not None %}
-        enable_passive_checks = "{{ template.enable_passive_checks }}"
+        {% if template.enable_passive_checks is defined %}
+        enable_passive_checks = {{ template.enable_passive_checks|lower }}
         {% endif %}
-        {% if template.enable_event_handler is not None %}
+        {% if template.enable_event_handler is defined %}
         enable_event_handler = "{{ template.enable_event_handler }}"
         {% endif %}
-        {% if template.enable_flapping is not None %}
-        enable_flapping = "{{ template.enable_flapping }}"
+        {% if template.enable_flapping is defined %}
+        enable_flapping = {{ template.enable_flapping|lower }}
         {% endif %}
-        {% if template.enable_perfdata is not None %}
-        enable_perfdata = "{{ template.enable_perfdata }}"
+        {% if template.enable_perfdata is defined %}
+        enable_perfdata = {{ template.enable_perfdata|lower }}
         {% endif %}
-        {% if template.event_command is not None %}
+        {% if template.event_command is defined %}
         event_command = "{{ template.event_command }}"
         {% endif %}
-        {% if template.volatile is not None %}
+        {% if template.volatile is defined %}
         volatile = "{{ template.volatile }}"
         {% endif %}
-        {% if template.zone is not None %}
+        {% if template.zone is defined %}
         zone = "{{ template.zone }}"
         {% endif %}
-        {% if template.command_endpoint is not None %}
+        {% if template.command_endpoint is defined %}
         command_endpoint = "{{ template.command_endpoint }}"
         {% endif %}
-        {% if template.notes is not None %}
+        {% if template.notes is defined %}
         notes = "{{ template.notes }}"
         {% endif %}
-        {% if template.notes_url is not None %}
+        {% if template.notes_url is defined %}
         notes_url = "{{ template.notes_url }}"
         {% endif %}
-        {% if template.action_url is not None %}
+        {% if template.action_url is defined %}
         action_url = "{{ template.action_url }}"
         {% endif %}
-        {% if template.icon_image is not None %}
+        {% if template.icon_image is defined %}
         icon_image = "{{ template.icon_image }}"
         {% endif %}
-        {% if template.icon_image_alt is not None %}
+        {% if template.icon_image_alt is defined %}
         icon_image_alt = "{{ template.icon_image_alt }}"
         {% endif %}
     }
 
     """
-    return Environment().from_string(conf).render(data=data,
-                                                  template=template)
+    return Environment(trim_blocks=True,
+                       lstrip_blocks=True).from_string(conf).render(data=data,
+                                                                    template=template)
 
 
 def generate_service_configuration(data, template):
@@ -284,90 +232,90 @@ def generate_service_configuration(data, template):
 
     """
     conf = """
-    object Service "{{ template.servicename }}" {
+    object Service "{{ template.name }}" {
         host_name = "{{ data.hostname }}"
-        {% if template.display_name is not None %}
+        {% if template.display_name is defined %}
         display_name = "{{ template.display_name }}"
         {% endif %}
-        {% if template.groups in not None %}
+        {% if template.groups in defined %}
         groups = [{% for group in template.groups %}"{{ group }}",{% endfor %}]
         {% endif %}
-        {% if template.max_check_attempts is not None %}
+        {% if template.max_check_attempts is defined %}
         max_check_attempts = "{{ template.max_check_attempts }}"
         {% endif %}
-        {% if template.check_command is not None %}
+        {% if template.check_command is defined %}
         check_command = "{{ template.check_command }}"
         {% endif %}
-        {% if template.vars is not None %}
-        {% for key, value in template.vars.iteritems() %}
+        {% if template.vars is defined %}
+        {% for key, value in template.vars.items() %}
         vars.{{ key }} = "{{ value }}"
         {% endfor %}
         {% endif %}
-        {% if template.check_period is not None %}
+        {% if template.check_period is defined %}
         check_period = "{{ template.check_period }}"
         {% endif %}
-        {% if template.check_timeout is not None %}
+        {% if template.check_timeout is defined %}
         check_timeout = "{{ template.check_timeout }}"
         {% endif %}
-        {% if template.check_interval is not None %}
+        {% if template.check_interval is defined %}
         template.check_interval = "{{ template.check_interval }}"
         {% endif %}
-        {% if template.retry_interval is not None %}
+        {% if template.retry_interval is defined %}
         retry_interval = "{{ template.retry_interval }}"
         {% endif %}
-        {% if template.enable_notifications is not None%}
-        enable_notifications = "{{ template.enable_notifications }}"
+        {% if template.enable_notifications is defined %}
+        enable_notifications = {{ template.enable_notifications|lower }}
         {% endif %}
-        {% if template.enable_active_checks is not None %}
-        enable_active_checks = "{{ template.enable_active_checks }}"
+        {% if template.enable_active_checks is defined %}
+        enable_active_checks = {{ template.enable_active_checks|lower }}
         {% endif %}
-        {% if template.enable_passive_checks is not None %}
-        enable_passive_checks = "{{ template.enable_passive_checks }}"
+        {% if template.enable_passive_checks is defined %}
+        enable_passive_checks = {{ template.enable_passive_checks|lower }}
         {% endif %}
-        {% if template.enable_event_handler is not None %}
-        enable_event_handler = "{{ template.enable_event_handler }}"
+        {% if template.enable_event_handler is defined %}
+        enable_event_handler = {{ template.enable_event_handler|lower }}
         {% endif %}
-        {% if template.enable_flapping is not None %}
-        enable_flapping = "{{ template.enable_flapping }}"
+        {% if template.enable_flapping is defined %}
+        enable_flapping = {{ template.enable_flapping|lower }}
         {% endif %}
-        {% if template.enable_perfdata is not None %}
-        enable_perfdata = "{{ template.enable_perfdata }}"
+        {% if template.enable_perfdata is defined %}
+        enable_perfdata = {{ template.enable_perfdata|lower }}
         {% endif %}
-        {% if template.event_command is not None %}
+        {% if template.event_command is defined %}
         event_command = "{{ template.event_command }}"
         {% endif %}
-        {% if template.flapping_threshold is not None %}
+        {% if template.flapping_threshold is defined %}
         flapping_threshold = "{{ template.flapping_threshold }}"
         {% endif %}
-        {% if template.volatile is not None %}
+        {% if template.volatile is defined %}
         volatile = "{{ template.volatile }}"
         {% endif %}
-        {% if template.zone is not None %}
+        {% if template.zone is defined %}
         zone = "{{ template.zone }}"
         {% endif %}
-        {% if template.command_endpoint is not None %}
+        {% if template.command_endpoint is defined %}
         command_endpoint = "{{ template.command_endpoint }}"
         {% endif %}
-        {% if template.notes is not None %}
+        {% if template.notes is defined %}
         notes = "{{ template.notes }}"
         {% endif %}
-        {% if template.notes_url is not None %}
+        {% if template.notes_url is defined %}
         notes_url = "{{ template.notes_url }}"
         {% endif %}
-        {% if template.action_url is not None %}
+        {% if template.action_url is defined %}
         action_url = "{{ template.action_url }}"
         {% endif %}
-        {% if template.icon_image is not None %}
+        {% if template.icon_image is defined %}
         icon_image = "{{ template.icon_image }}"
         {% endif %}
-        {% if template.icon_image_alt is not None %}
+        {% if template.icon_image_alt is defined %}
         icon_image_alt = "{{ template.icon_image_alt }}"
         {% endif %}
     }
-
     """
-    return Environment().from_string(conf).render(data=data,
-                                                  template=template)
+    return Environment(trim_blocks=True,
+                       lstrip_blocks=True).from_string(conf).render(data=data,
+                                                                    template=template)
 
 
 def get_api_request(url,
@@ -385,8 +333,9 @@ def get_api_request(url,
         LOGGER.error("FAIL: Icinga2 user is missing")
     else:
         try:
-            response = requests.get(url,
-                                    auth=(user, password),
+            response = requests.get(str(url),
+                                    auth=(str(user),
+                                          str(password)),
                                     verify=ssl_verify)
         except requests.exceptions.Timeout:
             LOGGER.error("Request to %s has timed out.", url)
@@ -400,10 +349,8 @@ def get_api_request(url,
             sys.exit(1)
         response_data = response.json()
         results = response_data['results']
-        print(results)
-        if results:
-            return True
-        return False
+        LOGGER.info(results)
+        return results
 
 
 def post_api_request(url,
@@ -414,6 +361,8 @@ def post_api_request(url,
     '''
       Cretate (PUT) configuration files to Icinga2 master
     '''
+    headers = {'Accept': 'application/json'}
+
     if url is None:
         LOGGER.error("FAIL: Icinga2 URL is missing")
     elif user is None:
@@ -421,19 +370,18 @@ def post_api_request(url,
     elif password is None:
         LOGGER.error("FAIL: Icinga2 user is missing")
     else:
-        headers = {'Accept': 'application/json'}
         try:
-            if data is not None:
+            if data is None:
                 response = requests.post(url,
                                          auth=(user, password),
                                          headers=headers,
                                          verify=ssl_verify)
             else:
                 response = requests.post(url,
-                                     auth=(user, password),
-                                     headers=headers,
-                                     data=json.dumps(data),
-                                     verify=ssl_verify)
+                                         auth=(user, password),
+                                         headers=headers,
+                                         data=data,
+                                         verify=ssl_verify)
         except requests.exceptions.Timeout:
             LOGGER.error("Request to %s has timed out.", url)
         # Maybe set up for a retry, or continue in a retry loop
@@ -445,8 +393,7 @@ def post_api_request(url,
             LOGGER.error(err)
             sys.exit(1)
         response_data = response.json()
-        results = response_data['results']
-        print(results)
+        LOGGER.info("URI: {0} \n{1}".format(url, response_data))
 
 
 def handler(event, context):
@@ -471,15 +418,16 @@ def handler(event, context):
     try:
         api_port = environ['API_PORT']
     except KeyError:
-        LOGGER.error('Please set the enviroment variable "API_PORT"')
+        LOGGER.warning('"API_PORT" value is missing. Using default: \'5665\'')
+        api_port = 5665
 
     try:
         api_endpoint = environ['API_ENDPOINT']
     except KeyError:
         LOGGER.error('Please set the enviroment variable "API_ENDPOINT"')
 
-    LOGGER.info(event)
-
+    LOGGER.info("Event: \n" + str(event))
+    LOGGER.info("Context: \n" + str(context))
     # Get instance metadata
     metadata = get_instance_data(event['detail']['instance-id'])
 
@@ -493,52 +441,56 @@ def handler(event, context):
     # Retrieve service configuration template from template store (S3 bucket)
     service_conf_tpl = get_conf_template(template_bucket,
                                          templates['service'])
+    LOGGER.info(yaml.load(host_conf_tpl))
+    LOGGER.info(yaml.load(service_conf_tpl))
     # Step 1: Check if configuration package exist
-    base_url = "https://{0}:{1}/v1/config/packages".format(api_endpoint, api_port)
-    packages = get_api_request(base_url, api_user, api_pass)
+    pkg_base_url = "https://{0}:{1}/v1/config/packages".format(api_endpoint,
+                                                               api_port)
+    packages = get_api_request(pkg_base_url, api_user, api_pass)
+    pkg_uri = pkg_base_url + "/{0}".format(metadata['hostname'])
+    stg_uri = "https://{0}:{1}/v1/config/stages/{2}".format(api_endpoint,
+                                                            api_port,
+                                                            metadata['hostname'])
+    conf_exist = False
     # check if package for the host exist
-    stages = None
     for package in packages:
         if package['name'] == metadata['hostname']:
-            stages = package['stages']
+            conf_exist = True
             break
-    uri = base_url + "/{0}".format(metadata['hostname'])
-    # if stages exist, confugration package was created
-    # otherwise create new configuration package
-    if stages is not None:
-        post_api_request(uri, api_user, api_pass)
+    # if configuration package does not exist, create new one
+    if not conf_exist:
+        LOGGER.info('Creating pkg {0}'.format(metadata['hostname']))
+        post_api_request(pkg_uri, api_user, api_pass)
 
     # Generate host configuration content
-    host_conf = generate_host_configuration(metadata, yaml.load(host_conf_tpl))
+    content = generate_host_configuration(metadata, yaml.load(host_conf_tpl))
+    # Generate service configuration content
+    services = yaml.load(service_conf_tpl)
+    for service in services:
+        content += generate_service_configuration(metadata, service)
+    LOGGER.info(content)
     # Create host configuration stage
-    if host_conf is not None:
+    if content is not None:
         data = {}
         conf_path = 'conf.d/{0}.conf'.format(metadata['hostname'])
-        data['files'] = {conf_path: host_conf}
-        post_api_request(uri, api_user, api_pass, data)
+        data['files'] = {conf_path: content}
+        post_api_request(stg_uri,
+                         api_user,
+                         api_pass,
+                         json.dumps(data))
         # Downtime just created host check
-        downtime_uri = "https://{0}:{1}/v1/actions/schedule-downtime?type=Host&filter=host.name=={3}".format(api_endpoint,
-                                                                                                             api_port,
-                                                                                                             metadata['hostname'])
+        downtime_uri = "https://{0}:{1}/v1/actions/schedule-downtime?type=Host&filter=host.name==\"{2}\"".format(api_endpoint,
+                                                                                                                 api_port,
+                                                                                                                 metadata['hostname'])
         downtime_data = {}
         now = datetime.utcnow()
-        downtime_time['start_time'] = calendar.timegm(now.utctimetuple())
-        end_timestamp = datetime.utcnow() + datetime.timedelta(minutes=10)
-        downtime_time['end_time'] = calendar.timegm(end_timestamp.timetuple())
+        downtime_data['start_time'] = calendar.timegm(now.utctimetuple())
+        end_timestamp = datetime.utcnow() + timedelta(minutes=10)
+        downtime_data['end_time'] = calendar.timegm(end_timestamp.timetuple())
+        downtime_data['author'] = 'automagic-lambda2icinga-agent'
+        downtime_data['comment'] = 'New host 15 min auto-downtime'
 
         post_api_request(downtime_uri,
                          api_user,
                          api_pass,
-                         downtime_data)
-
-    # Generate service configurations
-    services = yaml.load(service_conf_tpl)
-    service_conf = None
-    for service in services:
-        service_conf += generate_service_configuration(metadata, service)
-    # Create host service configuration file
-    if service_conf is not None:
-        data = {}
-        conf_path = 'conf.d/{0}_services.conf'.format(metadata['hostname'])
-        data['files'] = {conf_path: service_conf}
-        post_api_request(uri, api_user, api_pass, data)
+                         json.dumps(downtime_data))

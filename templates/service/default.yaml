@@ -1,47 +1,51 @@
 ---
-services:
-  load:
-    check_command: load
-    display_name: system_load
-    var:
-      load_cload1: 10
-      load_cload5: 6
-      load_cload15: 4
-      load_wload1: 5
-      load_wload5: 3
-      load_wload15: 4
-      load_percpu: false
-    max_check_attempts: 6
-    enable_notifications: true
-  process:
-    check_command: procs
-    display_name: process_count
-    var:
-      procs_critical: 400
-      procs_warning: 250
-      procs_nokthreads: true
-    enable_notifications: false
-  swap:
-    check_command: swap
-    display_name: swap_check
-    var:
-      swap_allswaps: false
-      swap_cfree: 5%
-      swap_integer: false
-      swap_noswap: critical
-      swap_wfree: 10%
-    enable_notification: true
-  disks:
-    check_command: disks
-    display_name: disk_usage
-    vars:
-      config: true
-    enable_notification: true
-  memory:
-    check_command: mem
-    display_name: memory_usage
-    var:
-      mem_warning: 10
-      mem_critical: 5
-      mem_used: true
-    enable_notification: true
+-
+  name: load
+  check_command: load
+  display_name: system_load
+  var:
+    load_cload1: 10
+    load_cload5: 6
+    load_cload15: 4
+    load_wload1: 5
+    load_wload5: 3
+    load_wload15: 4
+    load_percpu: false
+  max_check_attempts: 6
+  enable_notifications: true
+-
+  name: process
+  check_command: procs
+  display_name: process_count
+  var:
+    procs_critical: 400
+    procs_warning: 250
+    procs_nokthreads: true
+  enable_notifications: false
+-
+  name: swap
+  check_command: swap
+  display_name: swap_check
+  var:
+    swap_allswaps: false
+    swap_cfree: 5%
+    swap_integer: false
+    swap_noswap: critical
+    swap_wfree: 10%
+  enable_notification: true
+-
+  name: disks
+  check_command: disk
+  display_name: disk_usage
+  vars:
+    config: true
+  enable_notification: true
+-
+  name: memory
+  check_command: mem
+  display_name: memory_usage
+  var:
+    mem_warning: 10
+    mem_critical: 5
+    mem_used: true
+  enable_notification: true

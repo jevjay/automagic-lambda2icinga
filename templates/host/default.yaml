@@ -1,5 +1,4 @@
 ---
-  host:
-    check_timeout: 30
-    retry_interval: 3
-    max_check_attempts: 5
+check_timeout: 30
+retry_interval: 3
+max_check_attempts: 5
