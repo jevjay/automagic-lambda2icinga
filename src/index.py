@@ -48,6 +48,10 @@ def get_instance_data(instance):
     # Set default host/service configuration templates
     metadata['l2i_host_template'] = 'default'
     metadata['l2i_service_template'] = 'default'
+    metadata['l2i_endpoint_template'] = 'default'
+    metadata['l2i_zone_template'] = 'default'
+    # Assign private ip
+    metadata['address'] = data['PrivateIpAddress']
     for tag in data['Tags']:
         # Get hostname
         if tag['Key'] == 'Name':
@@ -58,20 +62,17 @@ def get_instance_data(instance):
         # Get service configuration template
         if tag['Key'] == 'l2i_service_template':
             metadata['l2i_service_template'] = tag['Value']
-        # Check if instance marked to be configured with pub ip
-        if tag['Key'] == 'l2i_public_enabled':
-            public = True
+        # Get host configuration template
+        if tag['Key'] == 'l2i_endpoint_template':
+            metadata['l2i_endpoint_template'] = tag['Value']
+        # Get service configuration template
+        if tag['Key'] == 'l2i_zone_template':
+            metadata['l2i_zone_template'] = tag['Value']
+        # Check if instance marked to be configured with public endpoint
+        # Example: ELB/ALB endpoints, Route53 entry, EC2 public dns name
+        if tag['Key'] == 'l2i_public_endpoint':
+            metadata['address'] = tag['Value']
 
-    # Assign private ip
-    metadata['address'] = data['PrivateIpAddress']
-    # If public flag set to true, enable public ip
-    if public:
-        try:
-            metadata['address'] = data['PublicIpAddress']
-        except KeyError:
-            # Add warrning logging and kepp private ip
-            LOGGER.warning('Not able to get public IP value for {0}'.format(metadata['hostname']))
-            pass
     LOGGER.info(metadata)
     return metadata
 
@@ -98,9 +99,58 @@ def get_conf_template(bucket, key):
             sys.exit(1)
 
 
+def generate_endpoint_configuration(data, template):
+    """
+    Generates Icinga2 endpoint configuration from the template
+    Endpoint object params:
+    - host: The hostname/IP address of the remote Icinga 2 instance
+    - port: The service name/port of the remote Icinga 2 instance
+    - log_duration: Duration for keeping replay logs on connection loss.
+    Defaults to 1d (86400 seconds). Attribute is specified in seconds.
+    If log_duration is set to 0, replaying logs is disabled.
+    """
+    conf = """
+    object Endpoint "{{ data.hostname }}" {
+        host = "{{ data.address }}"
+        {% if template.port is defined %}
+        port = {{ template.port }}
+        {% endif %}
+        {% if template.log_duration is defined %}
+        log_duration = {{ template.log_duration }}
+        {% endif %}
+    }
+    """
+    return Environment(trim_blocks=True,
+                       lstrip_blocks=True).from_string(conf).render(data=data,
+                                                                    template=template)
+
+
+def generate_zone_configuration(data, template):
+    """
+    Generates Icinga2 zone configuration from the template
+    Zone objects are used to specify which Icinga 2 instances are located in a zone.
+    Zone object params:
+    - endpoints: Array of endpoint names located in this zone
+    - parent: The name of the parent zone
+    """
+    conf = """
+    object Zone "{{ data.hostname }}" {
+        endpoints = [ "{{ data.hostname }}" ]
+        {% if template.parent is defined %}
+        parent = "{{ template.parent }}"
+        {% elif %}
+        parent = "master"
+        {% endif %}
+    }
+    """
+    return Environment(trim_blocks=True,
+                       lstrip_blocks=True).from_string(conf).render(data=data,
+                                                                    template=template)
+
+
 def generate_host_configuration(data, template):
     """
-    Genearates Icinga2 host configuration file out from the template
+    Genearates Icinga2 host configuration from the template
     Host object params:
     - display_name: A short description of the host
     - address: The host’s address.
@@ -432,9 +482,17 @@ def handler(event, context):
     metadata = get_instance_data(event['detail']['instance-id'])
 
     templates = {}
+    template['endpoint'] = "endpoint/{0}".format(metadata['l2i_endpoint_template'])
+    template['zone'] = "zone/{0}".format(metadata['l2i_zone_template'])
     templates['host'] = "host/{0}".format(metadata['l2i_host_template'])
     templates['service'] = "service/{0}".format(metadata['l2i_service_template'])
 
+    # Retrieve endpoint configuration template
+    endpoint_conf_tpl = get_conf_template(template_bucket,
+                                          templates['endpoint'])
+    # Retrieve zone configuration template
+    zone_conf_tpl = get_conf_template(template_bucket,
+                                      templates['zone'])
     # Retrieve host configuration template from template store (S3 bucket)
     host_conf_tpl = get_conf_template(template_bucket,
                                       templates['host'])
@@ -462,8 +520,12 @@ def handler(event, context):
         LOGGER.info('Creating pkg {0}'.format(metadata['hostname']))
         post_api_request(pkg_uri, api_user, api_pass)
 
+    # Generate endpoint configuration
+    content = generate_endpoint_configuration(metadata, yaml.load(endpoint_conf_tpl))
+    # Generate zone configuration
+    content += generate_zone_configuration(metadata, yaml.load(zone_conf_tpl))
     # Generate host configuration content
-    content = generate_host_configuration(metadata, yaml.load(host_conf_tpl))
+    content += generate_host_configuration(metadata, yaml.load(host_conf_tpl))
     # Generate service configuration content
     services = yaml.load(service_conf_tpl)
     for service in services:
@@ -487,7 +549,7 @@ def handler(event, context):
         downtime_data['start_time'] = calendar.timegm(now.utctimetuple())
         end_timestamp = datetime.utcnow() + timedelta(minutes=10)
         downtime_data['end_time'] = calendar.timegm(end_timestamp.timetuple())
-        downtime_data['author'] = 'automagic-lambda2icinga-agent'
+        downtime_data['author'] = 'automagic-lambda2icinga'
         downtime_data['comment'] = 'New host 15 min auto-downtime'
 
         post_api_request(downtime_uri,
