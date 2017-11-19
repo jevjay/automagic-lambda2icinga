@@ -34,7 +34,7 @@ resource "aws_lambda_permission" "ec2_startup_trigger" {
 }
 
 # === Cloudwatch event: instance tag creation ===
-resource "aws_cloudwatch_event_rule" "ec2_tag_create" {
+resource "aws_cloudwatch_event_rule" "ec2_tag_actions" {
   name        = "capture-ec2_tag_create"
   description = "Capture each AWS EC2 Tag Creation"
 
@@ -51,22 +51,23 @@ resource "aws_cloudwatch_event_rule" "ec2_tag_create" {
       "ec2.amazonaws.com"
     ],
     "eventName": [
-      "CreateTags"
+      "CreateTags",
+      "DeleteTags"
     ]
   }
 }
 PATTERN
 }
 
-resource "aws_cloudwatch_event_target" "ec2_tag_create" {
-  rule = "${aws_cloudwatch_event_rule.ec2_tag_create.name}"
+resource "aws_cloudwatch_event_target" "ec2_tag_actions" {
+  rule = "${aws_cloudwatch_event_rule.ec2_tag_actions.name}"
   arn  = "${aws_lambda_function.automagic_lambda2icinga.arn}"
 }
 
-resource "aws_lambda_permission" "ec2_tag_create_trigger" {
+resource "aws_lambda_permission" "ec2_tag_actions_trigger" {
   statement_id  = "AllowExecutionFromCloudWatchEc2StartEvent"
   action        = "lambda:InvokeFunction"
   function_name = "${aws_lambda_function.automagic_lambda2icinga.function_name}"
   principal     = "events.amazonaws.com"
-  source_arn    = "${aws_cloudwatch_event_rule.ec2_tag_create.arn}"
+  source_arn    = "${aws_cloudwatch_event_rule.ec2_tag_actions.arn}"
 }

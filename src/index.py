@@ -28,17 +28,24 @@ LOGGER = logging.getLogger()
 LOGGER.setLevel(logging.INFO)
 
 
-def get_instance_data(instance):
+def get_instance_data(instance,
+                      delete=False):
     """
         Get EC2 instances accross region
     """
     # Get EC2 resource
     ec2 = boto3.client('ec2', region_name=environ['AWS_DEFAULT_REGION'])
-    ec2_filters = [{
+    tag_filter = {
         "Name": "tag:icinga2",
         "Values": ["enabled", "True", "true"]
-        },
-        {"Name": "instance-id", "Values": [instance]}]
+    }
+    ec2_filters = [
+        {
+            "Name": "instance-id",
+            "Values": [instance]
+        }]
+    if not delete:
+        ec2_filters.append(tag_filter)
     response = ec2.describe_instances(Filters=ec2_filters)
     LOGGER.info(response)
     try:
@@ -283,7 +290,42 @@ def generate_host_configuration(data, template):
 
 def generate_service_configuration(data, template):
     """
-
+    Genearates Icinga2 service configuration from the template
+    Service object params:
+    - host_name: The host this service belongs to
+    - display_name: A short description of the service
+    - groups: The service groups this service belongs to
+    - vars: A dictionary containing custom attributes that are specific
+    to this service
+    - check_command: The name of the check command
+    - max_check_attempts: The number of times a service is re-checked
+    before changing into a hard state
+    - check_period: he name of a time period which determines when
+    this service should be checked
+    - check_timeout: Check command timeout in seconds
+    - check_interval: The check interval in seconds
+    - retry_interval: The retry interval in seconds
+    - enable_notifications: Whether notifications are enabled
+    - enable_active_checks: Whether active checks are enabled
+    - enable_passive_checks: Whether passive checks are enabled
+    - enable_event_handler: Enables event handlers for this host
+    - enable_flapping: Whether flap detection is enabled
+    - flapping_threshold_high: Flapping upper bound in percent for a
+    service to be considered flapping
+    - flapping_threshold_low: Flapping lower bound in percent for a
+    service to be considered not flapping.
+    - enable_perfdata: Whether performance data processing is enabled
+    - event_command: The name of an event command that should be executed
+    every time the service’s state changes or the service is in a SOFT state
+    - volatile: The volatile setting enables always HARD state types if NOT-OK
+    state changes occur
+    - zone: The zone this object is a member of
+    - command_endpoint: The endpoint where commands are executed on
+    - notes: Notes for the service
+    - notes_url: URL for notes for the service
+    - action_url: URL for actions for the service
+    - icon_image: Icon image for the service
+    - icon_image_alt: Icon image description for the service
     """
     conf = """
     object Service "{{ template.name }}" {
@@ -340,6 +382,12 @@ def generate_service_configuration(data, template):
         {% endif %}
         {% if template.flapping_threshold is defined %}
         flapping_threshold = "{{ template.flapping_threshold }}"
+        {% endif %}
+        {% if template.flapping_threshold_high is defined %}
+        flapping_threshold_high = {{ template.flapping_threshold_high }}
+        {% endif %}
+        {% if template.flapping_threshold_low is defined %}
+        flapping_threshold_low = {{ template.flapping_threshold_low }}
         {% endif %}
         {% if template.volatile is defined %}
         volatile = "{{ template.volatile }}"
@@ -447,10 +495,68 @@ def post_api_request(url,
             LOGGER.error(err)
             sys.exit(1)
         response_data = response.json()
-        LOGGER.info("URI: {0} \n{1}".format(url, response_data))
+        LOGGER.info("URI: %s \n%s", url, response_data)
 
 
-def setup_monitoring(instance_id):
+def delete_api_request(url,
+                       user,
+                       password,
+                       ssl_verify=False):
+    """
+        Delete (DELETE) configuration files from Icinga2 master
+    """
+    if url is None:
+        LOGGER.error("FAIL: Icinga2 URL is missing")
+    elif user is None:
+        LOGGER.error("FAIL: Icinga2 user is missing")
+    elif password is None:
+        LOGGER.error("FAIL: Icinga2 user is missing")
+    else:
+        try:
+            response = requests.delete(str(url),
+                                       auth=(str(user),
+                                             str(password)),
+                                       verify=ssl_verify)
+        except requests.exceptions.Timeout:
+            LOGGER.error("Request to %s has timed out.", url)
+            # Maybe set up for a retry, or continue in a retry loop
+        except requests.exceptions.TooManyRedirects:
+            LOGGER.error("Request to %s results in too many redirects.", url)
+        # Tell the user their URL was bad and try a different one
+        except requests.exceptions.RequestException as err:
+            # catastrophic error. bail.
+            LOGGER.error(err)
+            sys.exit(1)
+        response_data = response.json()
+        results = response_data['results']
+        LOGGER.info(results)
+
+
+def delete_monitoring(instance_id,
+                      api_endpoint,
+                      api_port,
+                      api_user,
+                      api_pass):
+    """
+        Delete monitoring configuration from Icinga2 master
+    """
+    metadata = get_instance_data(instance_id, True)
+
+    pkg_url = "https://{0}:{1}/v1/config/packages/{2}".format(api_endpoint,
+                                                              api_port,
+                                                              metadata['hostname'])
+    delete_api_request(pkg_url,
+                       api_user,
+                       api_pass)
+    LOGGER.info("Removed Icinga2 configuration for %s", metadata['hostname'])
+
+
+def setup_monitoring(instance_id,
+                     template_bucket,
+                     api_endpoint,
+                     api_port,
+                     api_user,
+                     api_pass):
     """
         Setup monitoring for host in Icinga2 master by creating Icinga2
         package/stage files in Icinga2 master
@@ -461,8 +567,8 @@ def setup_monitoring(instance_id):
     metadata = get_instance_data(instance_id)
 
     templates = {}
-    template['endpoint'] = "endpoint/{0}".format(metadata['l2i_endpoint_template'])
-    template['zone'] = "zone/{0}".format(metadata['l2i_zone_template'])
+    templates['endpoint'] = "endpoint/{0}".format(metadata['l2i_endpoint_template'])
+    templates['zone'] = "zone/{0}".format(metadata['l2i_zone_template'])
     templates['host'] = "host/{0}".format(metadata['l2i_host_template'])
     templates['service'] = "service/{0}".format(metadata['l2i_service_template'])
 
@@ -496,7 +602,7 @@ def setup_monitoring(instance_id):
             break
     # if configuration package does not exist, create new one
     if not conf_exist:
-        LOGGER.info('Creating pkg {0}'.format(metadata['hostname']))
+        LOGGER.info('Creating pkg %s', metadata['hostname'])
         post_api_request(pkg_uri, api_user, api_pass)
 
     # Generate endpoint configuration
@@ -570,10 +676,46 @@ def handler(event, context):
     LOGGER.info("Event: \n" + str(event))
     LOGGER.info("Context: \n" + str(context))
     if event['detail-type'] == 'EC2 Instance State-change Notification':
-        setup_monitoring(event['detail']['instance-id'])
+        setup_monitoring(event['detail']['instance-id'],
+                         template_bucket,
+                         api_endpoint,
+                         api_port,
+                         api_user,
+                         api_pass)
     elif event['detail-type'] == 'AWS API Call via CloudTrail':
         event_name = event['detail']['eventName']
+        instance_id = event['detail']['requestParameters']['resourcesSet']['items'][0]['resourceId']
+        tags = event['detail']['requestParameters']['tagSet']['items']
         if event_name == 'CreateTags':
-            setup_monitoring(event['detail']['requestParameters']['resourcesSet']['items'][0]['resourceId'])
+            for tag in tags:
+                if tag['key'] in ['icinga2',
+                                  'l2i_host_template',
+                                  'l2i_service_template',
+                                  'l2i_endpoint_template',
+                                  'l2i_zone_template']:
+                    setup_monitoring(instance_id,
+                                     template_bucket,
+                                     api_endpoint,
+                                     api_port,
+                                     api_user,
+                                     api_pass)
+                    break
         elif event_name == 'DeleteTags':
-            pass
+            if event['detail']['requestParameters']['tagSet']['items'][0]['key'] == 'icinga2':
+                delete_monitoring(instance_id,
+                                  api_endpoint,
+                                  api_port,
+                                  api_user,
+                                  api_pass)
+            else:
+                for tag in tags:
+                    if tag['key'] in ['l2i_host_template',
+                                      'l2i_service_template',
+                                      'l2i_endpoint_template',
+                                      'l2i_zone_template']:
+                        setup_monitoring(instance_id,
+                                         template_bucket,
+                                         api_endpoint,
+                                         api_port,
+                                         api_user,
+                                         api_pass)
