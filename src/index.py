@@ -41,9 +41,13 @@ def get_instance_data(instance):
         {"Name": "instance-id", "Values": [instance]}]
     response = ec2.describe_instances(Filters=ec2_filters)
     LOGGER.info(response)
-    data = response['Reservations'][0]['Instances'][0]
+    try:
+        data = response['Reservations'][0]['Instances'][0]
+    except IndexError:
+        err_msg = "Instance {0} is missing 'icinga2' tag. Check documentation on how to enable monitoring. Aborting...".format(instance)
+        LOGGER.error(err_msg)
+        sys.exit(1)
     # Flag to configure instance with public ip
-    public = False
     metadata = {}
     # Set default host/service configuration templates
     metadata['l2i_host_template'] = 'default'
@@ -446,40 +450,15 @@ def post_api_request(url,
         LOGGER.info("URI: {0} \n{1}".format(url, response_data))
 
 
-def handler(event, context):
+def setup_monitoring(instance_id):
     """
-        AWS Lambda main method
+        Setup monitoring for host in Icinga2 master by creating Icinga2
+        package/stage files in Icinga2 master
+        Parameters:
+            - instance_id: ec2 instance ID
     """
-    try:
-        template_bucket = environ['TEMPLATES_BUCKET']
-    except KeyError:
-        LOGGER.error('Please set the enviroment variable "TEMPLATES_BUCKET"')
-
-    try:
-        api_user = environ['API_USER']
-    except KeyError:
-        LOGGER.error('Please set the enviroment variable "API_USER"')
-
-    try:
-        api_pass = environ['API_PASS']
-    except KeyError:
-        LOGGER.error('Please set the enviroment variable "API_PASS"')
-
-    try:
-        api_port = environ['API_PORT']
-    except KeyError:
-        LOGGER.warning('"API_PORT" value is missing. Using default: \'5665\'')
-        api_port = 5665
-
-    try:
-        api_endpoint = environ['API_ENDPOINT']
-    except KeyError:
-        LOGGER.error('Please set the enviroment variable "API_ENDPOINT"')
-
-    LOGGER.info("Event: \n" + str(event))
-    LOGGER.info("Context: \n" + str(context))
     # Get instance metadata
-    metadata = get_instance_data(event['detail']['instance-id'])
+    metadata = get_instance_data(instance_id)
 
     templates = {}
     template['endpoint'] = "endpoint/{0}".format(metadata['l2i_endpoint_template'])
@@ -556,3 +535,45 @@ def handler(event, context):
                          api_user,
                          api_pass,
                          json.dumps(downtime_data))
+
+
+def handler(event, context):
+    """
+        AWS Lambda main method
+    """
+    try:
+        template_bucket = environ['TEMPLATES_BUCKET']
+    except KeyError:
+        LOGGER.error('Please set the enviroment variable "TEMPLATES_BUCKET"')
+
+    try:
+        api_user = environ['API_USER']
+    except KeyError:
+        LOGGER.error('Please set the enviroment variable "API_USER"')
+
+    try:
+        api_pass = environ['API_PASS']
+    except KeyError:
+        LOGGER.error('Please set the enviroment variable "API_PASS"')
+
+    try:
+        api_port = environ['API_PORT']
+    except KeyError:
+        LOGGER.warning('"API_PORT" value is missing. Using default: \'5665\'')
+        api_port = 5665
+
+    try:
+        api_endpoint = environ['API_ENDPOINT']
+    except KeyError:
+        LOGGER.error('Please set the enviroment variable "API_ENDPOINT"')
+
+    LOGGER.info("Event: \n" + str(event))
+    LOGGER.info("Context: \n" + str(context))
+    if event['detail-type'] == 'EC2 Instance State-change Notification':
+        setup_monitoring(event['detail']['instance-id'])
+    elif event['detail-type'] == 'AWS API Call via CloudTrail':
+        event_name = event['detail']['eventName']
+        if event_name == 'CreateTags':
+            setup_monitoring(event['detail']['requestParameters']['resourcesSet']['items'][0]['resourceId'])
+        elif event_name == 'DeleteTags':
+            pass
