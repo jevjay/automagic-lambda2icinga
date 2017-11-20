@@ -625,22 +625,29 @@ def setup_monitoring(instance_id,
                          api_user,
                          api_pass,
                          json.dumps(data))
-        # Downtime just created host check
-        downtime_uri = "https://{0}:{1}/v1/actions/schedule-downtime?type=Host&filter=host.name==\"{2}\"".format(api_endpoint,
-                                                                                                                 api_port,
-                                                                                                                 metadata['hostname'])
-        downtime_data = {}
-        now = datetime.utcnow()
-        downtime_data['start_time'] = calendar.timegm(now.utctimetuple())
-        end_timestamp = datetime.utcnow() + timedelta(minutes=10)
-        downtime_data['end_time'] = calendar.timegm(end_timestamp.timetuple())
-        downtime_data['author'] = 'automagic-lambda2icinga'
-        downtime_data['comment'] = 'New host 15 min auto-downtime'
+        LOGGER.info("Monitoring enabled for: %s", metadata['hostname'])
 
-        post_api_request(downtime_uri,
-                         api_user,
-                         api_pass,
-                         json.dumps(downtime_data))
+
+def downtime_check(url,
+                   duration,
+                   api_user,
+                   api_pass,
+                   comment):
+    """
+        Send request to downtime Icinga2 check
+    """
+    downtime_data = {}
+    now = datetime.utcnow()
+    downtime_data['start_time'] = calendar.timegm(now.utctimetuple())
+    end_timestamp = datetime.utcnow() + timedelta(minutes=duration)
+    downtime_data['end_time'] = calendar.timegm(end_timestamp.timetuple())
+    downtime_data['author'] = 'automagic-lambda2icinga'
+    downtime_data['comment'] = comment
+    post_api_request(url,
+                     api_user,
+                     api_pass,
+                     json.dumps(downtime_data))
+    LOGGER.info("Check downtimed for: %s", url)
 
 
 def handler(event, context):
@@ -676,12 +683,19 @@ def handler(event, context):
     LOGGER.info("Event: \n" + str(event))
     LOGGER.info("Context: \n" + str(context))
     if event['detail-type'] == 'EC2 Instance State-change Notification':
-        setup_monitoring(event['detail']['instance-id'],
-                         template_bucket,
-                         api_endpoint,
-                         api_port,
-                         api_user,
-                         api_pass)
+        if event['details']['state'] == 'running':
+            setup_monitoring(event['detail']['instance-id'],
+                             template_bucket,
+                             api_endpoint,
+                             api_port,
+                             api_user,
+                             api_pass)
+        elif event['details']['state'] == 'terminated':
+            delete_monitoring(event['detail']['instance-id'],
+                              api_endpoint,
+                              api_port,
+                              api_user,
+                              api_pass)
     elif event['detail-type'] == 'AWS API Call via CloudTrail':
         event_name = event['detail']['eventName']
         instance_id = event['detail']['requestParameters']['resourcesSet']['items'][0]['resourceId']
@@ -699,6 +713,15 @@ def handler(event, context):
                                      api_port,
                                      api_user,
                                      api_pass)
+                    # Downtime just created host check
+                    downtime_url = "https://{0}:{1}/v1/actions/schedule-downtime?type=Host&filter=host.name==\"{2}\"".format(api_endpoint,
+                                                                                                                             api_port,
+                                                                                                                             metadata['hostname'])
+                    downtime_check(downtime_url,
+                                   api_user,
+                                   api_pass,
+                                   'New host 15 min auto-downtime')
+
                     break
         elif event_name == 'DeleteTags':
             if event['detail']['requestParameters']['tagSet']['items'][0]['key'] == 'icinga2':
