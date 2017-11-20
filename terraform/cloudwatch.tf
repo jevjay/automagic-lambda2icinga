@@ -1,5 +1,5 @@
 # === Cloudwatch event: instance startup ===
-resource "aws_cloudwatch_event_rule" "ec2_startup" {
+resource "aws_cloudwatch_event_rule" "ec2_states" {
   name        = "capture-ec2-start"
   description = "Capture each AWS EC2 Start-Up"
 
@@ -13,24 +13,25 @@ resource "aws_cloudwatch_event_rule" "ec2_startup" {
   ],
   "detail": {
     "state": [
-      "running"
+      "running",
+      "terminated"
     ]
   }
 }
 PATTERN
 }
 
-resource "aws_cloudwatch_event_target" "ec2_startup" {
-  rule = "${aws_cloudwatch_event_rule.ec2_startup.name}"
+resource "aws_cloudwatch_event_target" "ec2_states" {
+  rule = "${aws_cloudwatch_event_rule.ec2_states.name}"
   arn  = "${aws_lambda_function.automagic_lambda2icinga.arn}"
 }
 
-resource "aws_lambda_permission" "ec2_startup_trigger" {
+resource "aws_lambda_permission" "ec2_states_trigger" {
   statement_id  = "AllowExecCloudWatchEc2StartEvent"
   action        = "lambda:InvokeFunction"
   function_name = "${aws_lambda_function.automagic_lambda2icinga.function_name}"
   principal     = "events.amazonaws.com"
-  source_arn    = "${aws_cloudwatch_event_rule.ec2_startup.arn}"
+  source_arn    = "${aws_cloudwatch_event_rule.ec2_states.arn}"
 }
 
 # === Cloudwatch event: instance tag creation ===
