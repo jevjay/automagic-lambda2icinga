@@ -4,11 +4,10 @@
 This tool uses custom defined YAML templates in order to generate corresponidng Icinga2 object types for the monitored hosts.
 
 Supported Object Types:
-
-	* [Endpoint](https://www.icinga.com/docs/icinga2/latest/doc/09-object-types/#endpoint)
-	* [Host](https://www.icinga.com/docs/icinga2/latest/doc/09-object-types/#host)
-	* [Service](https://www.icinga.com/docs/icinga2/latest/doc/09-object-types/#service)
-	* [Zone](https://www.icinga.com/docs/icinga2/latest/doc/09-object-types/#zone)
+*[Endpoint](https://www.icinga.com/docs/icinga2/latest/doc/09-object-types/#endpoint)
+*[Host](https://www.icinga.com/docs/icinga2/latest/doc/09-object-types/#host)
+*[Service](https://www.icinga.com/docs/icinga2/latest/doc/09-object-types/#service)
+*[Zone](https://www.icinga.com/docs/icinga2/latest/doc/09-object-types/#zone)
 
 ### Instalation
 
