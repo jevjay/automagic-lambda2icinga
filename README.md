@@ -124,11 +124,13 @@ Run `terraform apply` to deploy AWS changes
 
 	* Environment variables:
 
+	```
 	TEMPLATES_BUCKET - Bucket name, configured earlied to store object templates (Required)
 	API_USER - Icinga2 API username (Required)
 	API_PASS - Icinga2 API password (Required)
 	API_ENDPOIN - Icinga2 endpoint url (Required)
 	API_PORT - Icinga2 port (Optional. Defaults to: 5665)
+	```
 
 ### Usage
 
