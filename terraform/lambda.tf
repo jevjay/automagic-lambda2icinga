@@ -1,3 +1,13 @@
+variable "api_endpoint" {}
+
+variable "api_user" {}
+
+variable "api_password" {}
+
+variable "api_port" {
+  default = "5665"
+}
+
 variable "automagic_lambda2icinga_package" {
   default = "../src/pkg/bundle.zip"
 }
@@ -74,10 +84,10 @@ resource "aws_lambda_function" "automagic_lambda2icinga" {
   environment {
     variables = {
       TEMPLATES_BUCKET = "${var.bucket_name}"
-      API_ENDPOINT     = "ec2-52-17-166-42.eu-west-1.compute.amazonaws.com"
-      API_PORT         = "5665"
-      API_USER         = "root"
-      API_PASS         = "4d9RpA5HdH9R54wQ"
+      API_ENDPOINT     = "${var.api_endpoint}"
+      API_PORT         = "${var.api_port}"
+      API_USER         = "${var.api_user}"
+      API_PASS         = "${var.api_password}"
     }
   }
 }
