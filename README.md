@@ -187,3 +187,7 @@ Note: This function does not provide functionality to establish API connection b
 	* Master setup
 	* Client setup
 * Add ability to configure API connection between client/master
+
+### License
+
+This project is licensed under the MIT License - see the LICENSE file for details
