@@ -36,7 +36,7 @@ def get_instance_data(instance,
     # Get EC2 resource
     ec2 = boto3.client('ec2', region_name=environ['AWS_DEFAULT_REGION'])
     tag_filter = {
-        "Name": "tag:icinga2",
+        "Name": "tag:lambda2icinga",
         "Values": ["enabled", "True", "true"]
     }
     ec2_filters = [
@@ -51,7 +51,7 @@ def get_instance_data(instance,
     try:
         data = response['Reservations'][0]['Instances'][0]
     except IndexError:
-        err_msg = "Instance {0} is missing 'icinga2' tag. Check documentation on how to enable monitoring. Aborting...".format(instance)
+        err_msg = "Instance {0} is missing 'lambda2icinga' tag. Check documentation on how to enable monitoring. Aborting...".format(instance)
         LOGGER.error(err_msg)
         sys.exit(1)
     # Flag to configure instance with public ip
@@ -702,7 +702,7 @@ def handler(event, context):
         tags = event['detail']['requestParameters']['tagSet']['items']
         if event_name == 'CreateTags':
             for tag in tags:
-                if tag['key'] in ['icinga2',
+                if tag['key'] in ['lambda2icinga',
                                   'l2i_host_template',
                                   'l2i_service_template',
                                   'l2i_endpoint_template',
@@ -724,7 +724,7 @@ def handler(event, context):
 
                     break
         elif event_name == 'DeleteTags':
-            if event['detail']['requestParameters']['tagSet']['items'][0]['key'] == 'icinga2':
+            if event['detail']['requestParameters']['tagSet']['items'][0]['key'] == 'lambda2icinga':
                 delete_monitoring(instance_id,
                                   api_endpoint,
                                   api_port,
