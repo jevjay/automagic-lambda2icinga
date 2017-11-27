@@ -48,7 +48,7 @@ Run `terraform apply` to deploy AWS changes
 	* Timeout: `> 30sec`
 	* EC2 State-change trigger:
 
-	```
+	```json
 	{
 	  "detail-type": [
 	    "EC2 Instance State-change Notification"
@@ -67,7 +67,7 @@ Run `terraform apply` to deploy AWS changes
 
 	* Tag change trigger:
 
-	```
+	```json
 	{
 	  "detail-type": [
 	    "AWS API Call via CloudTrail"
@@ -89,7 +89,7 @@ Run `terraform apply` to deploy AWS changes
 
 	* Execution role:
 
-	```
+	```json
 	{
 	    "Version": "2012-10-17",
 	    "Statement": [
@@ -138,15 +138,19 @@ In order to configure EC2 instance to be auto-discovered and condfigured via Lam
 
 The minumum requred tag is:
 
-* lambda2icinga: enabled/Enabled/True/true (one of these values)
+```
+lambda2icinga: enabled/Enabled/True/true (one of these values)
+```
 
 By supplying following tag, Lambda2Icinga function will configure monitoring with default templates. If you want to use your own defined templates first you have to upload them to the template bucket.
 You can reference your template by using following tags:
 
-* l2i_host_template: your_host_template_name
-* l2i_service_template: your_service_template_name
-* l2i_endpoint_template: your_endpoint_template_name
-* l2i_zone_template: your_zone_template_name
+```
+l2i_host_template: your_host_template_name
+l2i_service_template: your_service_template_name
+l2i_endpoint_template: your_endpoint_template_name
+l2i_zone_template: your_zone_template_name
+```
 
 Configuring host for the first time will downtime its host check for 10 min in order to avoid 'false-positive' alerts (in case host bootstrap is not finished)
 
