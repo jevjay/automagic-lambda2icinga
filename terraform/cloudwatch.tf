@@ -72,3 +72,21 @@ resource "aws_lambda_permission" "ec2_tag_actions_trigger" {
   principal     = "events.amazonaws.com"
   source_arn    = "${aws_cloudwatch_event_rule.ec2_tag_actions.arn}"
 }
+
+# === S3 Template updated Lambda trigger
+resource "aws_lambda_permission" "template_bucket_trigger" {
+  statement_id  = "AllowExecutionFromS3Bucket"
+  action        = "lambda:InvokeFunction"
+  function_name = "${aws_lambda_function.automagic_lambda2icinga.arn}"
+  principal     = "s3.amazonaws.com"
+  source_arn    = "${aws_s3_bucket.s3_tpl_store.arn}"
+}
+
+resource "aws_s3_bucket_notification" "bucket_notification" {
+  bucket = "${aws_s3_bucket.s3_tpl_store.id}"
+
+  lambda_function {
+    lambda_function_arn = "${aws_lambda_function.automagic_lambda2icinga.arn}"
+    events              = ["s3:ObjectCreated:*", "s3:ObjectRemoved:*"]
+  }
+}
