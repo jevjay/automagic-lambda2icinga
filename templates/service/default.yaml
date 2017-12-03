@@ -45,7 +45,7 @@
   check_command: mem
   display_name: memory_usage
   var:
-    mem_warning: 10
-    mem_critical: 5
+    mem_warning: 10%
+    mem_critical: 5%
     mem_used: true
   enable_notification: true

@@ -1,7 +1,7 @@
 # === Cloudwatch event: instance startup ===
 resource "aws_cloudwatch_event_rule" "ec2_states" {
   name        = "capture-ec2-start"
-  description = "Capture each AWS EC2 Start-Up"
+  description = "Capture each AWS EC2 Start-Up/Termination"
 
   event_pattern = <<PATTERN
 {
@@ -37,7 +37,7 @@ resource "aws_lambda_permission" "ec2_states_trigger" {
 # === Cloudwatch event: instance tag creation ===
 resource "aws_cloudwatch_event_rule" "ec2_tag_actions" {
   name        = "capture-ec2_tag_create"
-  description = "Capture each AWS EC2 Tag Creation"
+  description = "Capture each AWS EC2 Tag Creation/Removal"
 
   event_pattern = <<PATTERN
 {

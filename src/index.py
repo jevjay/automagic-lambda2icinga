@@ -28,64 +28,55 @@ LOGGER = logging.getLogger()
 LOGGER.setLevel(logging.INFO)
 
 
-def get_instance_data(instance,
-                      delete=False):
+def get_instance_data(ec2_filter):
     """
         Get EC2 instances accross region
     """
     # Get EC2 resource
     ec2 = boto3.client('ec2', region_name=environ['AWS_DEFAULT_REGION'])
-    tag_filter = {
-        "Name": "tag:lambda2icinga",
-        "Values": ["enabled", "True", "true"]
-    }
-    ec2_filters = [
-        {
-            "Name": "instance-id",
-            "Values": [instance]
-        }]
-    if not delete:
-        ec2_filters.append(tag_filter)
-    response = ec2.describe_instances(Filters=ec2_filters)
+    response = ec2.describe_instances(Filters=ec2_filter)
     LOGGER.info(response)
     try:
-        data = response['Reservations'][0]['Instances'][0]
+        #data = response['Reservations'][0]['Instances'][0]
+        reservations = response['Reservations']
     except IndexError:
-        err_msg = "Instance {0} is missing 'lambda2icinga' tag. Check documentation on how to enable monitoring. Aborting...".format(instance)
+        err_msg = "Unable to retrieve instance data. Aborting..."
         LOGGER.error(err_msg)
         sys.exit(1)
-    # Flag to configure instance with public ip
-    metadata = {}
-    # Set default host/service configuration templates
-    metadata['l2i_host_template'] = 'default'
-    metadata['l2i_service_template'] = 'default'
-    metadata['l2i_endpoint_template'] = 'default'
-    metadata['l2i_zone_template'] = 'default'
-    # Assign private ip
-    metadata['address'] = data['PrivateIpAddress']
-    for tag in data['Tags']:
-        # Get hostname
-        if tag['Key'] == 'Name':
-            metadata['hostname'] = tag['Value']
-        # Get host configuration template
-        if tag['Key'] == 'l2i_host_template':
-            metadata['l2i_host_template'] = tag['Value']
-        # Get service configuration template
-        if tag['Key'] == 'l2i_service_template':
-            metadata['l2i_service_template'] = tag['Value']
-        # Get host configuration template
-        if tag['Key'] == 'l2i_endpoint_template':
-            metadata['l2i_endpoint_template'] = tag['Value']
-        # Get service configuration template
-        if tag['Key'] == 'l2i_zone_template':
-            metadata['l2i_zone_template'] = tag['Value']
-        # Check if instance marked to be configured with public endpoint
-        # Example: ELB/ALB endpoints, Route53 entry, EC2 public dns name
-        if tag['Key'] == 'l2i_public_endpoint':
-            metadata['address'] = tag['Value']
-
-    LOGGER.info(metadata)
-    return metadata
+    data = []
+    for reservation in reservations:
+        # Flag to configure instance with public ip
+        metadata = {}
+        # Set default host/service configuration templates
+        metadata['l2i_host_template'] = 'default'
+        metadata['l2i_service_template'] = 'default'
+        metadata['l2i_endpoint_template'] = 'default'
+        metadata['l2i_zone_template'] = 'default'
+        # Assign private ip
+        metadata['address'] = reservation['Instances'][0]['PrivateIpAddress']
+        for tag in reservation['Instances'][0]['Tags']:
+            # Get hostname
+            if tag['Key'] == 'Name':
+                metadata['hostname'] = tag['Value']
+            # Get host configuration template
+            if tag['Key'] == 'l2i_host_template':
+                metadata['l2i_host_template'] = tag['Value']
+            # Get service configuration template
+            if tag['Key'] == 'l2i_service_template':
+                metadata['l2i_service_template'] = tag['Value']
+            # Get host configuration template
+            if tag['Key'] == 'l2i_endpoint_template':
+                metadata['l2i_endpoint_template'] = tag['Value']
+            # Get service configuration template
+            if tag['Key'] == 'l2i_zone_template':
+                metadata['l2i_zone_template'] = tag['Value']
+            # Check if instance marked to be configured with public endpoint
+            # Example: ELB/ALB endpoints, Route53 entry, EC2 public dns name
+            if tag['Key'] == 'l2i_public_endpoint':
+                metadata['address'] = tag['Value']
+        data.append(metadata)
+    LOGGER.info(data)
+    return data
 
 
 def get_conf_template(bucket, key):
@@ -97,17 +88,41 @@ def get_conf_template(bucket, key):
         obj = client.get_object(Bucket=bucket, Key=key)
         return obj['Body'].read()
     except ClientError as err:
-        if err.response['Error']['Code'] == "404":
+        if err.response['Error']['Code'] == "NoSuchKey":
             # Log missing template 'fallback' operation
-            msg = "Templdate {0} does not exist. Using 'default' template".format(key)
-            LOGGER.warning(msg)
-            # Retrieve default template
-            key = "{0}/default".format(key.split('/')[0])
-            obj = client.get_object(Bucket=bucket, Key=key)
-            return obj['Body'].read()
-        else:
-            LOGGER.error("Unhandled error: \n{0}").format(err)
-            sys.exit(1)
+            LOGGER.warning("Can not find template: \n{0}".format(key))
+
+
+def generate_apiuser_configuration(template):
+    """
+    Generates Icinga2 ApiUser object, which is used for authentication against
+    the Icinga 2 API
+    ApiUser object params:
+    - password: Password string
+    - client_cn: Client Common Name
+    - permissions: Array of permissions
+    """
+    conf = """
+    object ApiUser "{{ template.name }}" {
+        {% if template.password is defined %}
+        password = "{{ template.password }}"
+        {% endif %}
+        {% if template.client_cn is defined %}
+        client_cn = "{{ template.client_cn }}"
+        {% endif %}
+        {% if template.permissions is defined %}
+        permissions = [{% for perm in template.permissions %}"{{ perm }}",{% endfor %}]
+        {% else %}
+        permissions = [ "*" ]
+        {% end %}
+    }
+    """
+    return Environment(trim_blocks=True,
+                       lstrip_blocks=True).from_string(conf).render(template=template)
+
+
+def generate_checkcommand_configuration(template):
+    pass
 
 
 def generate_endpoint_configuration(data, template):
@@ -532,7 +547,7 @@ def delete_api_request(url,
         LOGGER.info(results)
 
 
-def delete_monitoring(instance_id,
+def delete_monitoring(metadata,
                       api_endpoint,
                       api_port,
                       api_user,
@@ -540,8 +555,6 @@ def delete_monitoring(instance_id,
     """
         Delete monitoring configuration from Icinga2 master
     """
-    metadata = get_instance_data(instance_id, True)
-
     pkg_url = "https://{0}:{1}/v1/config/packages/{2}".format(api_endpoint,
                                                               api_port,
                                                               metadata['hostname'])
@@ -551,7 +564,7 @@ def delete_monitoring(instance_id,
     LOGGER.info("Removed Icinga2 configuration for %s", metadata['hostname'])
 
 
-def setup_monitoring(instance_id,
+def setup_monitoring(metadata,
                      template_bucket,
                      api_endpoint,
                      api_port,
@@ -563,9 +576,6 @@ def setup_monitoring(instance_id,
         Parameters:
             - instance_id: ec2 instance ID
     """
-    # Get instance metadata
-    metadata = get_instance_data(instance_id)
-
     templates = {}
     templates['endpoint'] = "endpoint/{0}".format(metadata['l2i_endpoint_template'])
     templates['zone'] = "zone/{0}".format(metadata['l2i_zone_template'])
@@ -682,63 +692,117 @@ def handler(event, context):
 
     LOGGER.info("Event: \n" + str(event))
     LOGGER.info("Context: \n" + str(context))
-    if event['detail-type'] == 'EC2 Instance State-change Notification':
-        if event['details']['state'] == 'running':
-            setup_monitoring(event['detail']['instance-id'],
-                             template_bucket,
-                             api_endpoint,
-                             api_port,
-                             api_user,
-                             api_pass)
-        elif event['details']['state'] == 'terminated':
-            delete_monitoring(event['detail']['instance-id'],
-                              api_endpoint,
-                              api_port,
-                              api_user,
-                              api_pass)
-    elif event['detail-type'] == 'AWS API Call via CloudTrail':
-        event_name = event['detail']['eventName']
-        instance_id = event['detail']['requestParameters']['resourcesSet']['items'][0]['resourceId']
-        tags = event['detail']['requestParameters']['tagSet']['items']
-        if event_name == 'CreateTags':
-            for tag in tags:
-                if tag['key'] in ['lambda2icinga',
-                                  'l2i_host_template',
-                                  'l2i_service_template',
-                                  'l2i_endpoint_template',
-                                  'l2i_zone_template']:
-                    setup_monitoring(instance_id,
+    if event['source'] == 'aws.ec2':
+        if event['detail-type'] == 'EC2 Instance State-change Notification':
+            instance_id = event['detail']['instance-id']
+            if event['detail']['state'] == 'running':
+                ec2_filters = [{
+                    "Name": "tag:lambda2icinga",
+                    "Values": ["enabled", "True", "true"]
+                }, {
+                    "Name": "instance-id",
+                    "Values": [instance_id]}]
+                data = get_instance_data(ec2_filters)
+                for metadata in data:
+                    setup_monitoring(metadata,
                                      template_bucket,
                                      api_endpoint,
                                      api_port,
                                      api_user,
                                      api_pass)
-                    # Downtime just created host check
-                    downtime_url = "https://{0}:{1}/v1/actions/schedule-downtime?type=Host&filter=host.name==\"{2}\"".format(api_endpoint,
-                                                                                                                             api_port,
-                                                                                                                             metadata['hostname'])
-                    downtime_check(downtime_url,
-                                   api_user,
-                                   api_pass,
-                                   'New host 15 min auto-downtime')
-
-                    break
-        elif event_name == 'DeleteTags':
-            if event['detail']['requestParameters']['tagSet']['items'][0]['key'] == 'lambda2icinga':
-                delete_monitoring(instance_id,
-                                  api_endpoint,
-                                  api_port,
-                                  api_user,
-                                  api_pass)
-            else:
+            elif event['detail']['state'] == 'terminated':
+                ec2_filters = [{
+                    "Name": "instance-id",
+                    "Values": [instance_id]
+                }]
+                data = get_instance_data(ec2_filters)
+                for metadata in data:
+                    delete_monitoring(metadata,
+                                      api_endpoint,
+                                      api_port,
+                                      api_user,
+                                      api_pass)
+        elif event['detail-type'] == 'AWS API Call via CloudTrail':
+            event_name = event['detail']['eventName']
+            instance_id = event['detail']['requestParameters']['resourcesSet']['items'][0]['resourceId']
+            tags = event['detail']['requestParameters']['tagSet']['items']
+            if event_name == 'CreateTags':
                 for tag in tags:
-                    if tag['key'] in ['l2i_host_template',
+                    if tag['key'] in ['lambda2icinga',
+                                      'l2i_host_template',
                                       'l2i_service_template',
                                       'l2i_endpoint_template',
                                       'l2i_zone_template']:
-                        setup_monitoring(instance_id,
-                                         template_bucket,
-                                         api_endpoint,
-                                         api_port,
-                                         api_user,
-                                         api_pass)
+                        ec2_filters = [{
+                            "Name": "tag:lambda2icinga",
+                            "Values": ["enabled", "True", "true"]
+                        }]
+                        data = get_instance_data(ec2_filters)
+                        for metadata in data:
+                            setup_monitoring(metadata,
+                                             template_bucket,
+                                             api_endpoint,
+                                             api_port,
+                                             api_user,
+                                             api_pass)
+                            # Downtime just created host check
+                            downtime_url = "https://{0}:{1}/v1/actions/schedule-downtime?type=Host&filter=host.name==\"{2}\"".format(api_endpoint,
+                                                                                                                                     api_port,
+                                                                                                                                     metadata['hostname'])
+                            downtime_check(downtime_url,
+                                           api_user,
+                                           api_pass,
+                                           'New host 15 min auto-downtime')
+
+                        break
+            elif event_name == 'DeleteTags':
+                if event['detail']['requestParameters']['tagSet']['items'][0]['key'] == 'lambda2icinga':
+                    ec2_filters = [{
+                        "Name": "instance-id",
+                        "Values": [instance_id]
+                    }]
+                    data = get_instance_data(ec2_filters)
+                    for metadata in data:
+                        delete_monitoring(metadata,
+                                          api_endpoint,
+                                          api_port,
+                                          api_user,
+                                          api_pass)
+                else:
+                    for tag in tags:
+                        if tag['key'] in ['l2i_host_template',
+                                          'l2i_service_template',
+                                          'l2i_endpoint_template',
+                                          'l2i_zone_template']:
+                            ec2_filter = [{
+                                "Name": "instance-id",
+                                "Values": [instance_id]
+                            }]
+                            data = get_instance_data(ec2_filters)
+                            for metadata in data:
+                                setup_monitoring(metadata,
+                                                 template_bucket,
+                                                 api_endpoint,
+                                                 api_port,
+                                                 api_user,
+                                                 api_pass)
+    elif event['Record'][0]['eventSource'] == 'aws.s3':
+        object_key = event['Record'][0]['s3']['object']['key']
+        template_name = object_key.split('/')[-1:]
+        ec2_filters = {}
+        if 'host' in object_key:
+            ec2_filter['tag:l2i_host_template'] = template_name
+        elif 'service' in object_key:
+            ec2_filter['tag:l2i_service_template'] = template_name
+        elif 'endpoint' in object_key:
+            ec2_filter['tag:l2i_endpoint_template'] = template_name
+        elif 'zone' in object_key:
+            ec2_filter['tag:l2i_zone_template'] = template_name
+        data = get_instance_data(ec2_filters)
+        for metadata in data:
+            setup_monitoring(metadata,
+                             template_bucket,
+                             api_endpoint,
+                             api_port,
+                             api_user,
+                             api_pass)

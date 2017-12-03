@@ -1,4 +1,6 @@
 ---
 check_timeout: 30
-retry_interval: 3
-max_check_attempts: 5
+check_interval: 3m
+retry_interval: 3m
+max_check_attempts: 3
+
