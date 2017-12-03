@@ -175,6 +175,48 @@ def generate_checkcommand_configuration(template):
                        lstrip_blocks=True).from_string(conf).render(template=template)
 
 
+def generate_comment_configuration(template):
+    """
+    Comments created at runtime are represented as objects
+    CheckCommand object params:
+    - host_name: The name of the host this comment belongs to
+    - service_name: The short name of the service this comment belongs to.
+    - author: The author’s name.
+    - text: The comment text.
+    - entry_time: The UNIX timestamp when this comment was added.
+    - entry_type: The comment type
+                  (User = 1, Downtime = 2, Flapping = 3, Acknowledgement = 4)
+    - expire_time: The comment’s expire time as UNIX timestamp
+    - persistent: Only evaluated for entry_type Acknowledgement.
+                  true does not remove the comment when the acknowledgement
+                  is removed.
+    """
+    conf = """
+    object Comment "{{ template.name }}" {
+    host_name = {{ template.host_name }}
+    {% if template.service_name is defined %}
+    service_name = {{ template.service_name }}
+    {% endif %}
+    author = {{ template.author }}
+    text = {{ template.text }}
+    {% if template.entry_time is defined %}
+    entry_time = {{ template.entry_time }}
+    {% endif %}
+    {% if template.entry_type is defined %}
+    entry_type = {{ template.entry_type }}
+    {% endif %}
+    {% if template.expire_time is defined %}
+    expire_time = {{ template.expire_time }}
+    {% endif %}
+    {% if template.persistent is defined %}
+    persistent = {{ template.persistent }}
+    {% endif %}
+    }
+    """
+    return Environment(trim_blocks=True,
+                       lstrip_blocks=True).from_string(conf).render(template=template)
+
+
 def generate_endpoint_configuration(data, template):
     """
     Generates Icinga2 endpoint configuration from the template
