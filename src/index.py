@@ -114,7 +114,7 @@ def generate_apiuser_configuration(template):
         permissions = [{% for perm in template.permissions %}"{{ perm }}",{% endfor %}]
         {% else %}
         permissions = [ "*" ]
-        {% end %}
+        {% endif %}
     }
     """
     return Environment(trim_blocks=True,
@@ -122,7 +122,57 @@ def generate_apiuser_configuration(template):
 
 
 def generate_checkcommand_configuration(template):
-    pass
+    """
+    Generates a check command object definition.
+    CheckCommand object params:
+    - command: The command. This can either be an array of individual command
+               arguments.Alternatively a string can be specified in which case
+               the shell interpreter (usually /bin/sh) takes care of parsing
+               the command. When using the “arguments” attribute this must be
+               an array. Can be specified as function for advanced
+               implementations.
+    - env: A dictionary of macros which should be exported as environment
+           variables prior to executing the command.
+    - vars: A dictionary containing custom attributes that are specific to
+            this command.
+    - timeout: The command timeout in seconds.
+    - arguments: A dictionary of command arguments.
+    """
+    conf = """
+    object CheckCommand "{{ template.name }}" {
+        command = [ {{ template.command }} ]
+        {% if template.env is defined %}
+        {% for key, value in template.env.items() %}
+        env.{{ key }} = {{ value }}
+        {% endfor %}
+        {% endif %}
+        {% if template.vars is defined %}
+        {% for key, value in template.vars.items() %}
+        vars.{{ key }} = {{ value }}
+        {% endfor %}
+        {% endif %}
+        {% if template.timeout is defined %}
+        timeout = "{{ template.timeout }}"
+        {% endif %}
+        {% if template.arguments is defined %}
+        arguments = {
+            {% for key, value in template.arguments.items() %}
+            {% if value is mapping %}
+            "{{ key }}" = {
+                {% for k, v in value.items() %}
+                {{ k }} = "{{ v }}"
+                {% endfor %}
+            }
+            {% else %}
+            "{{ key }}" = "${{ value }}$"
+            {% endif %}
+            {% endfor %}
+        }
+        {% endif %}
+    }
+    """
+    return Environment(trim_blocks=True,
+                       lstrip_blocks=True).from_string(conf).render(template=template)
 
 
 def generate_endpoint_configuration(data, template):
