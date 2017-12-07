@@ -217,6 +217,60 @@ def generate_comment_configuration(template):
                        lstrip_blocks=True).from_string(conf).render(template=template)
 
 
+def generate_dependency_configuration(template):
+    """
+    Generates Dependency objects are used to specify dependencies between
+    hosts and services. Dependencies can be defined as:
+        Host-to-Host,
+        Service-to-Service,
+        Service-to-Host,
+        Host-to-Service relations.
+    Dependency object params:
+    - parent_host_name: The parent host.
+    - parent_service_name: The parent service. If omitted, this
+                           dependency object is treated as host dependency.
+    - child_host_name: The child host.
+    - child_service_name: The child service. If omitted, this
+                          dependency object is treated as host dependency.
+    - disable_checks: Whether to disable checks when this dependency fails.
+    - disable_notifications: Whether to disable notifications when this
+                             dependency fails.
+    - ignore_soft_states: Whether to ignore soft states for the reachability
+                          calculation.
+    - period: Time period object during which this dependency is enabled.
+    - states: A list of state filters when this dependency should be OK.
+    """
+    conf = """
+    object Dependency "{{ template.name }}" {
+    parent_host_name = "{{ template.parent_host_name }}"
+    {% if template.parent_service_name is defined %}
+    parent_service_name = "{{ template.parent_service_name }}"
+    {% endif %}
+    child_host_name = "{{ template.child_host_name }}"
+    {% if template.child_service_name is defined %}
+    child_service_name = "{{ child_service_name }}"
+    {% endif %}
+    {% if template.disable_checks is defined %}
+    disable_checks = {{ template.disable_checks }}
+    {% endif %}
+    {% if template.disable_notifications is defined %}
+    disable_notifications = {{ template.disable_notifications }}
+    {% endif %}
+    {% if template.ignore_soft_states is defined %}
+    ignore_soft_states = {{ template.ignore_soft_states }}
+    {% endif %}
+    {% if template.period is defined %}
+    period = "{{ template.period }}"
+    {% endif %}
+    {% if template.states is defined %}
+    states = [{% for state in template.states %} {{ state }},{% endfor %}]
+    {% endif %}
+    }
+    """
+    return Environment(trim_blocks=True,
+                       lstrip_blocks=True).from_string(conf).render(template=template)
+
+
 def generate_endpoint_configuration(data, template):
     """
     Generates Icinga2 endpoint configuration from the template
