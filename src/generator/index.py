@@ -54,7 +54,7 @@ def call_publisher(func_name, configs):
     """
     # Build payload
     payload = {
-    'objetcs': configs,
+        'objetcs': configs,
     }
     client = boto3.client('lambda')
     client.invoke(FunctionName='LambdaWorker',
@@ -63,12 +63,11 @@ def call_publisher(func_name, configs):
                   Payload=json.dumps(payload))
 
 
-
 def handler(event, context):
     """
         AWS Lambda main method
     """
-    # Get template bucket value
+    # Get environment variables
     template_bucket = env_var('TEMPLATES_BUCKET')
     publisher_func = env_var('PUBLISER_FUNCTION')
     # Get all used templates
