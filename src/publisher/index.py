@@ -5,6 +5,8 @@ from os import environ
 import sys
 import json
 import logging
+from datetime import datetime, timedelta
+import calendar
 import requests
 
 # Configure LOGGER object
@@ -180,7 +182,7 @@ def delete_package(package_name,
 
 
 def create_stage(package_name,
-                 files,
+                 objects,
                  api_endpoint,
                  api_port,
                  api_user,
@@ -194,8 +196,8 @@ def create_stage(package_name,
     payload = {}
     conf = {}
 
-    for file in files:
-        conf[file['path']] = file['content']
+    for obj in objects:
+        conf[obj['path']] = obj['content']
 
     payload['files'] = conf
 
@@ -221,7 +223,7 @@ def update_monitoring(data,
                    api_pass)
     # Create stage for specified package
     create_stage(data['pkg_name'],
-                 data['files'],
+                 data['objects'],
                  api_endpoint,
                  api_port,
                  api_user,
@@ -244,12 +246,50 @@ def delete_monitoring(data,
     LOGGER.info("Removed Icinga2 configuration for %s", data['pkg_name'])
 
 
+def downtime_check(api_endpoint,
+                   api_port,
+                   api_user,
+                   api_pass,
+                   duration,
+                   comment):
+    """
+        Send request to downtime Icinga2 check
+    """
+    url = "https://{0}:{1}//v1/actions/schedule-downtime".format(api_endpoint,
+                                                                 api_port)
+    downtime_data = {}
+    now = datetime.utcnow()
+    downtime_data['start_time'] = calendar.timegm(now.utctimetuple())
+    end_timestamp = datetime.utcnow() + timedelta(minutes=duration)
+    downtime_data['end_time'] = calendar.timegm(end_timestamp.timetuple())
+    downtime_data['author'] = 'lambda2icinga'
+    downtime_data['comment'] = comment
+    post_api_request(url,
+                     api_user,
+                     api_pass,
+                     json.dumps(downtime_data))
+    LOGGER.info("Check downtimed for: %s", url)
+
+
 def handler(event, context):
     """
         AWS Lambda main method
     """
     # Get environment variables
+    api_endpoint = env_var('API_ENDPOINT')
+    api_port = env_var('API_PORT')
     api_user = env_var('API_USER')
     api_pass = env_var('API_PASS')
-    api_port = env_var('API_PORT')
-    api_endpoint = env_var('API_ENDPOINT')
+
+    if event['type'] == 'update_monitoring':
+        update_monitoring(event,
+                          api_endpoint,
+                          api_port,
+                          api_user,
+                          api_pass)
+    elif event['type'] == 'delete_monitoring':
+        delete_monitoring(event,
+                          api_endpoint,
+                          api_port,
+                          api_user,
+                          api_pass)

@@ -48,16 +48,20 @@ def generate_configuration_object(template, data):
                        lstrip_blocks=True).from_string(template).render(data=data)
 
 
-def call_publisher(func_name, configs):
+def call_publisher(func_name,
+                   package_name,
+                   configs):
     """
         Calls Lambda function
     """
     # Build payload
     payload = {
-        'objetcs': configs,
+        'type': 'update_monitoring',
+        'pkg_name': package_name,
+        'objects': configs,
     }
     client = boto3.client('lambda')
-    client.invoke(FunctionName='LambdaWorker',
+    client.invoke(FunctionName=func_name,
                   InvocationType='Event',
                   LogType='None',
                   Payload=json.dumps(payload))
@@ -72,12 +76,19 @@ def handler(event, context):
     publisher_func = env_var('PUBLISER_FUNCTION')
     # Get all used templates
     templates = event['templates']
-    configs = {}
+    configs = []
     for template in templates:
+        # Get object file
+        object_file = template['key'].split('/')[-1]
+        # Get object configuration
         template = get_conf_template(template_bucket, template['key'])
         config = generate_configuration_object(template, template['data'])
-        # Get object type
-        object_type = template['key'].split('/')[0]
-        configs[object_type] = config
+        # Create configuration dictionary
+        dict = {}
+        dict['path'] = object_file
+        dict['content'] = config
+        configs.append(dict)
     # Call publisher function
-    call_publisher(publisher_func, configs)
+    call_publisher(publisher_func,
+                   event['pkg_name'],
+                   configs)
